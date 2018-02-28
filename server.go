@@ -6,9 +6,69 @@ import (
     "log"
     "net"
     "crypto/x509"
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"
 )
 
+var db *sql.DB
+
+func connectToDatabase() {
+
+    // Conectamos a la Base de Datos y guardamos la conexion en una variable global
+    var error error
+    db, error = sql.Open("mysql",
+        "sds:sdsua2018@tcp(hypercloud.c4kq3ja5awir.eu-west-3.rds.amazonaws.com:3306)/hypercloud")
+
+    if error != nil {
+        log.Fatal(error)
+    }
+
+}
+
+func getUsers() {
+
+    //Lanzamos una consulta contra la BD para obtener todos los usuarios
+    var (
+        id int
+        email string
+        name string
+    )
+
+    //Guardamos en rows todos los resultados obtenidos
+    rows, e := db.Query("select * from users")
+
+    if e != nil {
+        log.Fatal(e)
+    }
+
+    defer rows.Close()
+
+    //Recorremos todas las filas y las vamos mostrando
+    for rows.Next() {
+
+        //Al pasar los parametros con & se alamacenará el valor de cada columna en ellos
+
+        /*
+            IMPORTANTE A Scan hay que pasarle el mismo numero de parametros que pedimos en la consulta
+            en este caso los 3 campos sino se va a la mierda
+        */
+        er := rows.Scan(&id, &email, &name)
+        if er != nil {
+            log.Fatal(er)
+        }
+        log.Println(id, email, name)
+    }
+    e = rows.Err()
+    if e != nil {
+        log.Fatal(e)
+    }
+}
+
 func main() {
+
+    connectToDatabase()
+    defer db.Close()
+    getUsers()
     cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
     if err != nil {
         log.Fatalf("server: loadkeys: %s", err)
