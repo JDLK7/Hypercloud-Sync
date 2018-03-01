@@ -5,12 +5,9 @@
 CREATE TABLE `users` (
   `id` int(11) NOT NULL,
   `email` varchar(50) NOT NULL,
+  `password` varchar(255) NOT NULL,
   `name` varchar(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
-INSERT INTO `users` (`id`, `email`, `name`) VALUES
-(1, 'josesguay@gmail.com', 'Jose Domenech Leal'),
-(2, 'joaquin.anton95@gmail.com', 'Joaquin Jose Anton Orts');
 
 --
 -- Estructura de la tabla 'files'
