@@ -8,16 +8,20 @@ import (
     "crypto/x509"
     "database/sql"
     _ "github.com/go-sql-driver/mysql"
+    "github.com/subosito/gotenv"
+    "os"
 )
 
 var db *sql.DB
 
 func connectToDatabase() {
+    connectionString := os.Getenv("DB_USERNAME") + ":" + os.Getenv("DB_PASSWORD") + 
+        "@tcp(" + os.Getenv("DB_HOST") + ":" + os.Getenv("DB_PORT") + ")/" + 
+        os.Getenv("DB_DATABASE");
 
     // Conectamos a la Base de Datos y guardamos la conexion en una variable global
     var error error
-    db, error = sql.Open("mysql",
-        "sds:sdsua2018@tcp(hypercloud.c4kq3ja5awir.eu-west-3.rds.amazonaws.com:3306)/hypercloud")
+    db, error = sql.Open("mysql", connectionString)
 
     if error != nil {
         log.Fatal(error)
@@ -62,6 +66,12 @@ func getUsers() {
     if e != nil {
         log.Fatal(e)
     }
+}
+
+// Funcion que se ejecuta antes que main
+func init() {
+    // Carga las variables de entorno
+    gotenv.Load()
 }
 
 func main() {
