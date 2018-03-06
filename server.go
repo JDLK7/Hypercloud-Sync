@@ -13,10 +13,13 @@ import (
 	"log"
 	"net"
 	"os"
-
+	"github.com/gorilla/mux"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/subosito/gotenv"
 	"golang.org/x/crypto/bcrypt"
+	"net/http"
+	"strconv"
+	"fmt"
 )
 
 var db *sql.DB
@@ -36,7 +39,7 @@ func connectToDatabase() {
 
 }
 
-func getUsers() {
+func getUsers(w http.ResponseWriter, r *http.Request) {
 
 	//Lanzamos una consulta contra la BD para obtener todos los usuarios
 	var (
@@ -46,7 +49,7 @@ func getUsers() {
 	)
 
 	//Guardamos en rows todos los resultados obtenidos
-	rows, e := db.Query("select * from users")
+	rows, e := db.Query("select id,email,name from users")
 
 	if e != nil {
 		log.Fatal(e)
@@ -67,12 +70,19 @@ func getUsers() {
 		if er != nil {
 			log.Fatal(er)
 		}
-		log.Println(id, email, name)
+		//log.Println(id, email, name)
 	}
 	e = rows.Err()
 	if e != nil {
 		log.Fatal(e)
 	}
+	w.WriteHeader(http.StatusOK)
+	res := make([]byte, 30)
+	copy(res[:], strconv.Itoa(id) + " " + email + " " + name)
+	fmt.Println(strconv.Itoa(id) + " " + email + " " + name)
+
+	w.Write(res)
+
 }
 
 // Comprueba si el usuario existe en la base de datos
@@ -93,8 +103,17 @@ func checkIfUserExists(email string) bool {
 	return exists
 }
 
-func registerUser(userData map[string]interface{}) {
-	stmtIns, err := db.Prepare("INSERT INTO users (email, password, name) VALUES (?, ?, ?)")
+func loginUser(w http.ResponseWriter, r *http.Request) {
+
+	var userData map[string]interface{}
+	buf := make([]byte, 512)
+	n, _ := r.Body.Read(buf)
+
+	if err := json.Unmarshal(buf[:n], &userData); err != nil {
+		panic(err)
+	}
+
+	stmtIns, err := db.Prepare("SELECT email, password FROM users WHERE email = ? " )
 	if err != nil {
 		panic(err.Error())
 	}
@@ -102,14 +121,82 @@ func registerUser(userData map[string]interface{}) {
 
 	cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
 
-	_, queryError := stmtIns.Exec(userData["email"].(string), cipherPass, userData["name"].(string))
+	var hash, email string
+
+	queryError := stmtIns.QueryRow(userData["email"].(string)).Scan(&email, &hash)
+
 	if queryError != nil {
 		panic(queryError)
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(userData["password"].(string))) == nil {
+		w.Write([]byte("Correct password"))
+	} else {
+		w.Write([]byte("Wrong user or password"))
+	}
+
+}
+
+
+func registerUser(w http.ResponseWriter, r *http.Request) {
+
+
+	var userData map[string]interface{}
+	buf := make([]byte, 512)
+	n, _ := r.Body.Read(buf)
+
+	if err := json.Unmarshal(buf[:n], &userData); err != nil {
+		panic(err)
+	}
+
+	if !checkIfUserExists(userData["email"].(string)) {
+
+		stmtIns, err := db.Prepare("INSERT INTO users (email, password, name) VALUES (?, ?, ?)")
+		if err != nil {
+			panic(err.Error())
+		}
+		defer stmtIns.Close()
+
+		cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
+
+		_, queryError := stmtIns.Exec(userData["email"].(string), cipherPass, userData["name"].(string))
+		if queryError != nil {
+			panic(queryError)
+		}
+
+		w.Write([]byte("Correctly registered user"))
+	} else {
+		w.Write([]byte("User already exists"))
 	}
 }
 
 // Devuelve la clave cifrada con la "pimienta" en base64
 func encryptHashedPassword(hash []byte) string {
+	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
+	nonce := make([]byte, 12)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		panic(err.Error())
+	}
+
+	aesgcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	ciphertext := aesgcm.Seal(nil, nonce, hash, nil)
+
+	return base64.StdEncoding.EncodeToString(ciphertext)
+}
+
+// Devuelve la clave cifrada con la "pimienta" en base64
+func decryptHashedPassword(hash []byte) string {
 	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
 
 	block, err := aes.NewCipher(key)
@@ -155,7 +242,18 @@ func main() {
 
 	connectToDatabase()
 	defer db.Close()
-	getUsers()
+	//getUsers()
+
+	r := mux.NewRouter()
+	r.HandleFunc("/users", getUsers)
+	r.HandleFunc("/register", registerUser)
+	r.HandleFunc("/login", loginUser)
+	//http.Handle("/", r)
+	http.ListenAndServeTLS("0.0.0.0:8443", "cert.pem", "key.pem", r)
+
+}
+
+func loadCertificates(){
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
 	if err != nil {
 		log.Fatalf("server: loadkeys: %s", err)
@@ -188,6 +286,7 @@ func main() {
 	}
 }
 
+
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 	buf := make([]byte, 512)
@@ -208,9 +307,7 @@ func handleClient(conn net.Conn) {
 			panic(err)
 		}
 
-		if !checkIfUserExists(request["email"].(string)) {
-			registerUser(request)
-		}
+
 
 		n, err = conn.Write(buf[:n])
 
