@@ -9,17 +9,18 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
-	"github.com/gorilla/mux"
+	"strconv"
+
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/mux"
 	"github.com/subosito/gotenv"
 	"golang.org/x/crypto/bcrypt"
-	"net/http"
-	"strconv"
-	"fmt"
 )
 
 var db *sql.DB
@@ -78,7 +79,7 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	res := make([]byte, 30)
-	copy(res[:], strconv.Itoa(id) + " " + email + " " + name)
+	copy(res[:], strconv.Itoa(id)+" "+email+" "+name)
 	fmt.Println(strconv.Itoa(id) + " " + email + " " + name)
 
 	w.Write(res)
@@ -113,13 +114,13 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	stmtIns, err := db.Prepare("SELECT email, password FROM users WHERE email = ? " )
+	stmtIns, err := db.Prepare("SELECT email, password FROM users WHERE email = ? ")
 	if err != nil {
 		panic(err.Error())
 	}
 	defer stmtIns.Close()
 
-	cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
+	// cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
 
 	var hash, email string
 
@@ -137,9 +138,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-
 func registerUser(w http.ResponseWriter, r *http.Request) {
-
 
 	var userData map[string]interface{}
 	buf := make([]byte, 512)
@@ -170,59 +169,66 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Devuelve la clave cifrada con la "pimienta" en base64
+// Devuelve la clave cifrada con la "pimienta" en base64.
 func encryptHashedPassword(hash []byte) string {
+	// Se decodifica la clave de cifrado que está guardada como variable de entorno.
 	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
 
+	// Se instancia el cifrador
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 
-	// Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
-	nonce := make([]byte, 12)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(err.Error())
+	// El vector de inicialización debe ser único, pero no seguro. Por lo tanto,
+	// es común incluirlo al principio del texto cifrado.
+	ciphertext := make([]byte, aes.BlockSize+len(hash))
+	iv := ciphertext[:aes.BlockSize]
+
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		panic(err)
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		panic(err.Error())
-	}
+	// Se cifra el hash.
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], hash)
 
-	ciphertext := aesgcm.Seal(nil, nonce, hash, nil)
-
+	// Se devuelve codificado en base64 para almacenarlo.
 	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
-// Devuelve la clave cifrada con la "pimienta" en base64
-func decryptHashedPassword(hash []byte) string {
+// Devuelve la clave descifrada como []byte
+func decryptHashedPassword(cipherPassword string) []byte {
+	// Se decodifica el texto cifrado.
+	ciphertext, _ := base64.StdEncoding.DecodeString(cipherPassword)
+
+	// Se decodifica la clave de cifrado que está guardada como variable de entorno.
 	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
 
+	// Se instancia el cifrador.
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 
-	// Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
-	nonce := make([]byte, 12)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(err.Error())
-	}
+	// Se recupera el vector de inicialización del texto cifrado.
+	iv := ciphertext[:aes.BlockSize]
 
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		panic(err.Error())
-	}
+	// Se crea un slice de bytes para almacenar el texto en claro.
+	// Posteriormente se tendrá que acortar con el tamaño del hash generado
+	// por la contraseña que se ha enviado al hacer login.
+	hash := make([]byte, 255)
 
-	ciphertext := aesgcm.Seal(nil, nonce, hash, nil)
+	// Se descifra.
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(hash, ciphertext[aes.BlockSize:])
 
-	return base64.StdEncoding.EncodeToString(ciphertext)
+	return hash
 }
 
 // Devuelve el hash de la contraseña en []byte
 func hashPassword(password string) []byte {
-	passwordBytes := []byte(password)
+	passwordBytes, _ := base64.StdEncoding.DecodeString(password)
 
 	hashedPassword, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.DefaultCost)
 	if err != nil {
@@ -230,6 +236,16 @@ func hashPassword(password string) []byte {
 	}
 
 	return hashedPassword
+}
+
+// Compara si la contraseña coincide con el hash
+func comparePassword(hashedPassword, plainPassword []byte) bool {
+	err := bcrypt.CompareHashAndPassword(hashedPassword, plainPassword)
+	if err != nil {
+		return false
+	}
+
+	return true
 }
 
 // Funcion que se ejecuta antes que main
@@ -253,7 +269,7 @@ func main() {
 
 }
 
-func loadCertificates(){
+func loadCertificates() {
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
 	if err != nil {
 		log.Fatalf("server: loadkeys: %s", err)
@@ -286,7 +302,6 @@ func loadCertificates(){
 	}
 }
 
-
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 	buf := make([]byte, 512)
@@ -306,8 +321,6 @@ func handleClient(conn net.Conn) {
 		if err := json.Unmarshal(buf[:n], &request); err != nil {
 			panic(err)
 		}
-
-
 
 		n, err = conn.Write(buf[:n])
 
