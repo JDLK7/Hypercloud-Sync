@@ -4,15 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -106,31 +103,33 @@ func checkIfUserExists(email string) bool {
 
 func loginUser(w http.ResponseWriter, r *http.Request) {
 
+
 	var userData map[string]interface{}
 	buf := make([]byte, 512)
 	n, _ := r.Body.Read(buf)
 
 	if err := json.Unmarshal(buf[:n], &userData); err != nil {
-		panic(err)
+		//panic(err)
+		fmt.Println(err)
 	}
 
 	stmtIns, err := db.Prepare("SELECT email, password FROM users WHERE email = ? ")
 	if err != nil {
-		panic(err.Error())
+		//panic(err.Error())
 	}
 	defer stmtIns.Close()
 
-	// cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
+	//cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
 
 	var hash, email string
 
 	queryError := stmtIns.QueryRow(userData["email"].(string)).Scan(&email, &hash)
-
+	hashedPass := decryptHashedPassword(hash)
 	if queryError != nil {
-		panic(queryError)
+		//panic(queryError)
 	}
-
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(userData["password"].(string))) == nil {
+	var passIn, _ = base64.StdEncoding.DecodeString(userData["password"].(string))
+	if bcrypt.CompareHashAndPassword(hashedPass, passIn) == nil {
 		w.Write([]byte("Correct password"))
 	} else {
 		w.Write([]byte("Wrong user or password"))
@@ -265,72 +264,6 @@ func main() {
 	r.HandleFunc("/register", registerUser)
 	r.HandleFunc("/login", loginUser)
 	//http.Handle("/", r)
-	http.ListenAndServeTLS("0.0.0.0:8443", "cert.pem", "key.pem", r)
+	http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", r)
 
-}
-
-func loadCertificates() {
-	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
-	if err != nil {
-		log.Fatalf("server: loadkeys: %s", err)
-	}
-	config := tls.Config{Certificates: []tls.Certificate{cert}}
-	config.Rand = rand.Reader
-	service := "0.0.0.0:8443"
-	listener, err := tls.Listen("tcp", service, &config)
-	if err != nil {
-		log.Fatalf("server: listen: %s", err)
-	}
-	log.Print("server: listening")
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Printf("server: accept: %s", err)
-			break
-		}
-		defer conn.Close()
-		log.Printf("server: accepted from %s", conn.RemoteAddr())
-		tlscon, ok := conn.(*tls.Conn)
-		if ok {
-			log.Print("ok=true")
-			state := tlscon.ConnectionState()
-			for _, v := range state.PeerCertificates {
-				log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
-			}
-		}
-		go handleClient(conn)
-	}
-}
-
-func handleClient(conn net.Conn) {
-	defer conn.Close()
-	buf := make([]byte, 512)
-	for {
-		log.Print("server: conn: waiting")
-		n, err := conn.Read(buf)
-		if err != nil {
-			if err != nil {
-				log.Printf("server: conn: read: %s", err)
-			}
-			break
-		}
-		log.Printf("server: conn: echo %q\n", string(buf[:n]))
-
-		var request map[string]interface{}
-
-		if err := json.Unmarshal(buf[:n], &request); err != nil {
-			panic(err)
-		}
-
-		n, err = conn.Write(buf[:n])
-
-		n, err = conn.Write(buf[:n])
-		log.Printf("server: conn: wrote %d bytes", n)
-
-		if err != nil {
-			log.Printf("server: write: %s", err)
-			break
-		}
-	}
-	log.Println("server: conn: closed")
 }
