@@ -13,11 +13,17 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"Hypercloud-Sync/utils"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/gorilla/mux"
+	//"github.com/gorilla/mux"
 	"github.com/subosito/gotenv"
 	"golang.org/x/crypto/bcrypt"
+	"net/smtp"
+	"github.com/gorilla/mux"
+	"crypto/tls"
+	"net"
+	"time"
 )
 
 var db *sql.DB
@@ -130,7 +136,9 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	}
 	var passIn, _ = base64.StdEncoding.DecodeString(userData["password"].(string))
 	if bcrypt.CompareHashAndPassword(hashedPass, passIn) == nil {
-		w.Write([]byte("Correct password"))
+		codigo := generateCode(email)
+		sendMail(email, "Introduce el siguiente codigo en la aplicación para continuar: H-" + strconv.Itoa(codigo) + "\nEste codigo solo tiene validez durante 1 hora")
+		w.Write([]byte("Se te ha enviado un email con el código de acceso, por favor comprueba tu bandeja de entrada"))
 	} else {
 		w.Write([]byte("Wrong user or password"))
 	}
@@ -247,6 +255,72 @@ func comparePassword(hashedPassword, plainPassword []byte) bool {
 	return true
 }
 
+func sendMail(email string, message string) bool{
+	// Set up authentication information.
+	conn, err := net.Dial("tcp", "smtp.gmail.com:465")
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
+	auth := smtp.PlainAuth(
+		"",
+		"hypercloud17@gmail.com",
+		"hypercloud17",
+		"smtp.gmail.com",
+	)
+
+	// TLS
+	tlsconfig := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName: "smtp.gmail.com",
+	}
+
+	conn = tls.Client(conn, tlsconfig)
+	client, err := smtp.NewClient(conn, "smtp.gmail.com")
+	fmt.Println("Autenticado")
+	// Connect to the server, authenticate, set the sender and recipient,
+	// and send the email all in one step.
+	client.StartTLS(tlsconfig)
+
+
+	client.Auth(auth)
+	client.Mail("hypercloud17@gmail.com")
+	client.Rcpt(email)
+	w, err := client.Data()
+	_, err = w.Write([]byte(message))
+	err = w.Close()
+	client.Quit()
+
+
+
+	fmt.Println("Intentando mensaje")
+	if err != nil {
+		log.Fatal(err)
+		return false
+	} else {
+		return true
+	}
+
+}
+
+func generateCode(email string) int{
+
+	code := utils.Random(100000, 99999999)
+
+	stmtIns, err := db.Prepare("UPDATE users SET loginCod = ?, timeValid = ? WHERE email = ?")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer stmtIns.Close()
+
+	_, queryError := stmtIns.Exec(code, time.Now().Add(time.Hour).Unix() ,email)
+	if queryError != nil {
+		panic(queryError)
+	}
+
+	return code
+}
+
 // Funcion que se ejecuta antes que main
 func init() {
 	// Carga las variables de entorno
@@ -254,7 +328,6 @@ func init() {
 }
 
 func main() {
-
 	connectToDatabase()
 	defer db.Close()
 	//getUsers()

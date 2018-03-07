@@ -1,15 +1,13 @@
 package main
 
 import (
-	"crypto/sha512"
 	"crypto/tls"
-	//"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"bytes"
+	"Hypercloud-Sync/utils"
 )
 
 type registerRequest struct {
@@ -25,13 +23,7 @@ type loginRequest struct {
 
 var conn *tls.Conn
 
-// Devuelve el hash de la contraseña en base64.
-func hash(password string) string {
-	hasher := sha512.New()
-	hasher.Write([]byte(password))
 
-	return base64.StdEncoding.EncodeToString(hasher.Sum(nil))
-}
 
 // Pregunta al usuario los datos de registro y
 // devuelve un 'registerRequest' con ellos
@@ -48,7 +40,7 @@ func register() {
 	userData := registerRequest{
 		Name:     name,
 		Email:    email,
-		Password: hash(password),
+		Password: utils.Hash(password),
 	}
 
 	request, _ := json.Marshal(userData)
@@ -77,7 +69,7 @@ func login() {
 
 	userData := loginRequest{
 		Email:    email,
-		Password: hash(password),
+		Password: utils.Hash(password),
 	}
 
 	request, _ := json.Marshal(userData)
@@ -89,7 +81,7 @@ func login() {
 	}
 	body := res.Body
 
-	p := make([]byte, 30)
+	p := make([]byte, 255)
 	n, err := body.Read(p)
 	fmt.Println(string(p[:n]))
 }
