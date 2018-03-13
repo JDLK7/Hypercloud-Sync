@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"bytes"
 	"Hypercloud-Sync/utils"
+	//"github.com/skratchdot/open-golang/open"
+	//"github.com/sqweek/dialog"
 )
 
 type registerRequest struct {
@@ -19,6 +21,11 @@ type registerRequest struct {
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type verifyRequest struct {
+	Email    string `json:"email"`
+	Code string `json:"code"`
 }
 
 var conn *tls.Conn
@@ -84,6 +91,28 @@ func login() {
 	p := make([]byte, 255)
 	n, err := body.Read(p)
 	fmt.Println(string(p[:n]))
+
+	requestAccessCode(email)
+
+}
+
+func requestAccessCode(email string){
+	var codigo string
+	fmt.Print("Codigo: H-")
+	fmt.Scanf("%s\n", &codigo)
+
+	verifyData := verifyRequest{
+		Email: email,
+		Code: codigo,
+	}
+	fmt.Println("Intentando peticion")
+	request, _ := json.Marshal(verifyData)
+	res, _ := http.Post("https://127.0.0.1:8443/verify", "application/json", bytes.NewBuffer(request))
+	fmt.Println("Peticion hecha")
+	body := res.Body
+	p := make([]byte, 255)
+	n, _ := body.Read(p)
+	fmt.Println(string(p[:n]))
 }
 
 func menu() string{
@@ -106,16 +135,6 @@ func main() {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
 
 
-	//log.Println("client: connected to: ", conn.RemoteAddr())
-
-	//state := conn.ConnectionState()
-	/*for _, v := range state.PeerCertificates {
-		fmt.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
-		fmt.Println(v.Subject)
-	}*/
-	//log.Println("client: handshake: ", state.HandshakeComplete)
-	//log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
-
 	var opt = "0"
 	for opt != "3" {
 		opt = menu()
@@ -125,5 +144,8 @@ func main() {
 			case "2": login()
 		}
 	}
+
+	//open.Start("https://google.com")
+	//dialog.File().Title("Export to XML").Save()
 
 }

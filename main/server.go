@@ -145,6 +145,39 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func verifyCode(w http.ResponseWriter, r *http.Request) {
+
+	var verifyData map[string]interface{}
+	buf := make([]byte, 512)
+	n, _ := r.Body.Read(buf)
+
+	if err := json.Unmarshal(buf[:n], &verifyData); err != nil {
+		//panic(err)
+		fmt.Println(err)
+	}
+
+	stmtIns, err := db.Prepare("SELECT loginCod, timeValid FROM users WHERE email = ?")
+	if err != nil {
+		//panic(err.Error())
+	}
+	defer stmtIns.Close()
+
+	var loginCode, timeValid string
+
+	queryError := stmtIns.QueryRow(verifyData["email"].(string)).Scan(&loginCode, &timeValid)
+
+	if queryError != nil {
+		//panic(queryError)
+	}
+	timeParsed, _ := strconv.ParseInt(timeValid, 10, 64)
+	if loginCode == verifyData["code"] && utils.CheckTime(time.Now(), time.Unix(timeParsed,0)) {
+		w.Write([]byte("Access granted"))
+	} else {
+		w.Write([]byte("Wrong access code"))
+	}
+
+}
+
 func registerUser(w http.ResponseWriter, r *http.Request) {
 
 	var userData map[string]interface{}
@@ -336,6 +369,7 @@ func main() {
 	r.HandleFunc("/users", getUsers)
 	r.HandleFunc("/register", registerUser)
 	r.HandleFunc("/login", loginUser)
+	r.HandleFunc("/verify", verifyCode)
 	//http.Handle("/", r)
 	http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", r)
 
