@@ -20,13 +20,24 @@ import (
 	"github.com/subosito/gotenv"
 	"golang.org/x/crypto/bcrypt"
 	"net/smtp"
-	"github.com/gorilla/mux"
+	//"github.com/gorilla/mux"
 	"crypto/tls"
 	"net"
 	"time"
+	"github.com/dgrijalva/jwt-go"
+	"github.com/gorilla/mux"
+	"strings"
 )
 
+type verifyResponse struct {
+	Ok    bool `json:"ok"`
+	Message string `json:"message"`
+	Jwt string `json:"jwt"`
+}
+
 var db *sql.DB
+
+
 
 func connectToDatabase() {
 	connectionString := os.Getenv("DB_USERNAME") + ":" + os.Getenv("DB_PASSWORD") +
@@ -170,12 +181,43 @@ func verifyCode(w http.ResponseWriter, r *http.Request) {
 		//panic(queryError)
 	}
 	timeParsed, _ := strconv.ParseInt(timeValid, 10, 64)
+
+	var verifyDataResponse verifyResponse;
+
 	if loginCode == verifyData["code"] && utils.CheckTime(time.Now(), time.Unix(timeParsed,0)) {
-		w.Write([]byte("Access granted"))
+
+
+
+		verifyDataResponse = verifyResponse{
+			Ok:    true,
+			Message: "Access granted",
+			Jwt: generateToken(verifyData["email"].(string)),
+		}
+
+
 	} else {
-		w.Write([]byte("Wrong access code"))
+		verifyDataResponse = verifyResponse{
+			Ok:    false,
+			Message: "Wrong access code",
+		}
 	}
 
+	data, _ := json.Marshal(verifyDataResponse)
+
+	w.Write([]byte(data))
+
+}
+
+func generateToken(user string) string {
+
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user": user,
+		"exp": time.Now().Unix()+1,
+	})
+
+	tokenString, _ := token.SignedString([]byte(os.Getenv("APP_KEY")))
+	return tokenString
 }
 
 func registerUser(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +279,21 @@ func encryptHashedPassword(hash []byte) string {
 	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
+func upload(w http.ResponseWriter, r *http.Request) {
+
+	file, err := os.Create("./result")
+	if err != nil {
+		panic(err)
+	}
+	n, err := io.Copy(file, r.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	w.Write([]byte(fmt.Sprintf("%d bytes are recieved.\n", n)))
+
+}
+
 // Devuelve la clave descifrada como []byte
 func decryptHashedPassword(cipherPassword string) []byte {
 	// Se decodifica el texto cifrado.
@@ -276,16 +333,6 @@ func hashPassword(password string) []byte {
 	}
 
 	return hashedPassword
-}
-
-// Compara si la contraseña coincide con el hash
-func comparePassword(hashedPassword, plainPassword []byte) bool {
-	err := bcrypt.CompareHashAndPassword(hashedPassword, plainPassword)
-	if err != nil {
-		return false
-	}
-
-	return true
 }
 
 func sendMail(email string, message string) bool{
@@ -354,6 +401,32 @@ func generateCode(email string) int{
 	return code
 }
 
+func checkAuth(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+
+		tokens := strings.Split(header, " ")
+
+		if tokens[0] == "Bearer" {
+
+			token, _ := jwt.Parse(tokens[1], func(token *jwt.Token) (interface{}, error) {
+				return []byte(os.Getenv("APP_KEY")), nil
+			})
+
+			if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)){
+				fmt.Println("Token válido")
+				h.ServeHTTP(w, r)
+
+			} else {
+				fmt.Println("Token no válido")
+			}
+
+		} else {
+			fmt.Println("La autenticación no es mediante JWT")
+		}
+	})
+}
+
 // Funcion que se ejecuta antes que main
 func init() {
 	// Carga las variables de entorno
@@ -370,7 +443,14 @@ func main() {
 	r.HandleFunc("/register", registerUser)
 	r.HandleFunc("/login", loginUser)
 	r.HandleFunc("/verify", verifyCode)
+
+	subrouter := r.PathPrefix("/private").Subrouter()
+	subrouter.Use(checkAuth)
+	subrouter.HandleFunc("/upload", upload)
+
 	//http.Handle("/", r)
 	http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", r)
+
+
 
 }

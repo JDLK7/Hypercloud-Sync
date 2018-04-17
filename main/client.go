@@ -10,6 +10,12 @@ import (
 	"Hypercloud-Sync/utils"
 	//"github.com/skratchdot/open-golang/open"
 	//"github.com/sqweek/dialog"
+	"github.com/sqweek/dialog"
+	"os"
+	"encoding/base64"
+	"github.com/subosito/gotenv"
+	"io/ioutil"
+	"io"
 )
 
 type registerRequest struct {
@@ -30,7 +36,8 @@ type verifyRequest struct {
 
 var conn *tls.Conn
 
-
+var userToken string;
+var userJwtToken string;
 
 // Pregunta al usuario los datos de registro y
 // devuelve un 'registerRequest' con ellos
@@ -66,7 +73,6 @@ func register() {
 }
 
 func login() {
-
 	var email, password string
 
 	fmt.Print("Email: ")
@@ -74,9 +80,10 @@ func login() {
 	fmt.Print("Password: ")
 	fmt.Scanf("%s\n", &password)
 
+	hashedPass := utils.Hash(password)
 	userData := loginRequest{
 		Email:    email,
-		Password: utils.Hash(password),
+		Password: hashedPass,
 	}
 
 	request, _ := json.Marshal(userData)
@@ -92,11 +99,11 @@ func login() {
 	n, err := body.Read(p)
 	fmt.Println(string(p[:n]))
 
-	requestAccessCode(email)
+	requestAccessCode(email, hashedPass)
 
 }
 
-func requestAccessCode(email string){
+func requestAccessCode(email string, hashedPass string){
 	var codigo string
 	fmt.Print("Codigo: H-")
 	fmt.Scanf("%s\n", &codigo)
@@ -112,7 +119,118 @@ func requestAccessCode(email string){
 	body := res.Body
 	p := make([]byte, 255)
 	n, _ := body.Read(p)
-	fmt.Println(string(p[:n]))
+
+	var verifyDataResponse map[string]interface{}
+
+	json.Unmarshal(p[:n], &verifyDataResponse)
+	fmt.Println(verifyDataResponse["message"])
+
+	if verifyDataResponse["ok"].(bool) {
+		userToken = hashedPass
+		userJwtToken = verifyDataResponse["jwt"].(string)
+		file, err := os.Create("./token")
+		if err != nil {
+			panic(err)
+		}
+		n , err := io.Copy(file, bytes.NewBuffer([]byte(verifyDataResponse["jwt"].(string))))
+		if err != nil {
+			panic(err)
+			panic(n)
+		}
+		filename, err := dialog.File().Title("Select file").Load()
+		fmt.Println(filename)
+		var opt = "0"
+		for opt != "3" {
+			opt = privateMenu()
+			switch opt {
+			case "1": uploadFile()
+			}
+
+			//selectFile()
+		}
+
+
+
+
+	}
+}
+
+func privateMenu() string{
+
+	var opt string
+	fmt.Println("1. Subir fichero")
+	fmt.Println("2. Listar ficheros")
+	fmt.Println("3. Descargar fichero")
+	fmt.Print("Opción: ")
+	fmt.Scanf("%s\n", &opt)
+
+	return opt
+}
+
+func uploadFile() {
+
+	chiperFile := selectFile()
+
+	req, err := http.NewRequest("POST", "https://127.0.0.1:8443/private/upload", bytes.NewBuffer(chiperFile))
+
+	req.Header.Set("Content-Type", "binary/octet-stream")
+	req.Header.Set("Authorization", "Bearer " + userJwtToken)
+
+	res, err := (&http.Client{}).Do(req)
+
+	if err != nil {
+		panic(err)
+	}
+	defer res.Body.Close()
+	message, _ := ioutil.ReadAll(res.Body)
+	fmt.Printf(string(message))
+}
+func selectFile() []byte{
+
+	fmt.Println("Abriendo dialogo")
+	filename, err := dialog.File().Title("Select file").Load()
+	fmt.Println("Dialogo abierto")
+
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	file, err := os.Open(filename) // For read access.
+	if err != nil {
+		log.Fatal(err)
+	}
+	fi, err := file.Stat()
+	data := make([]byte, fi.Size())
+	count, err := file.Read(data)
+	if err != nil {
+		log.Fatal(count)
+	}
+
+	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
+
+	cipheredFile := utils.Encrypt(data, key)
+	return cipheredFile
+	/*filenameEn, _ := dialog.File().Title("Export to XML").Load()
+	fileEn, err := os.Open(filenameEn) // For read access.
+	if err != nil {
+		log.Fatal(err)
+	}
+	fiEn, err := fileEn.Stat()
+	dataEn := make([]byte, fiEn.Size())
+	countEn, err := fileEn.Read(dataEn)
+	fmt.Println(dataEn)
+	if err != nil {
+		log.Fatal(countEn)
+	}
+
+
+	utils.Decrypt(dataEn, key)*/
+	//fmt.Printf("read %d bytes: %q\n", count, data[:count])
+	/*fileDecrypted := utils.Decrypt(string(fileEncrypted), key)
+
+	ioutil.WriteFile("./prueba.pdf", fileDecrypted, 0777)
+	ioutil.WriteFile("./pruebaDes.pdf", []byte(fileEncrypted), 0777)*/
 }
 
 func menu() string{
@@ -126,6 +244,11 @@ func menu() string{
 	return opt
 }
 
+// Funcion que se ejecuta antes que main
+func init() {
+	// Carga las variables de entorno
+	gotenv.Load()
+}
 
 func main() {
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
@@ -144,8 +267,4 @@ func main() {
 			case "2": login()
 		}
 	}
-
-	//open.Start("https://google.com")
-	//dialog.File().Title("Export to XML").Save()
-
 }
