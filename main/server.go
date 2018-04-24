@@ -27,6 +27,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"strings"
+	"bytes"
 )
 
 type verifyResponse struct {
@@ -148,7 +149,7 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	var passIn, _ = base64.StdEncoding.DecodeString(userData["password"].(string))
 	if bcrypt.CompareHashAndPassword(hashedPass, passIn) == nil {
 		codigo := generateCode(email)
-		sendMail(email, "Introduce el siguiente codigo en la aplicación para continuar: H-" + strconv.Itoa(codigo) + "\nEste codigo solo tiene validez durante 1 hora")
+		sendMail(email,"Codigo: H-" + string(codigo), "\nIntroduce el siguiente codigo en la aplicación para continuar: H-" + strconv.Itoa(codigo) + "\nEste codigo solo tiene validez durante 1 hora")
 		w.Write([]byte("Se te ha enviado un email con el código de acceso, por favor comprueba tu bandeja de entrada"))
 	} else {
 		w.Write([]byte("Wrong user or password"))
@@ -335,7 +336,7 @@ func hashPassword(password string) []byte {
 	return hashedPassword
 }
 
-func sendMail(email string, message string) bool{
+func sendMail(email string, subject string, message string) bool{
 	// Set up authentication information.
 	conn, err := net.Dial("tcp", "smtp.gmail.com:465")
 	if err != nil {
@@ -367,7 +368,8 @@ func sendMail(email string, message string) bool{
 	client.Mail("hypercloud17@gmail.com")
 	client.Rcpt(email)
 	w, err := client.Data()
-	_, err = w.Write([]byte(message))
+	bodyMail := bytes.NewBufferString(message)
+	_, err = bodyMail.WriteTo(w)
 	err = w.Close()
 	client.Quit()
 
