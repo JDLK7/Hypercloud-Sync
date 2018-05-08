@@ -360,6 +360,8 @@ func encryptHashedPassword(hash []byte) string {
 
 func upload(w http.ResponseWriter, r *http.Request) {
 
+	os.Mkdir("files", 0755)
+
 	filename := r.Header.Get("X-Filename")
 	header := r.Header.Get("Authorization")
 	fmt.Println("Fichero subido: " + filepath.Base(filename))
@@ -547,11 +549,11 @@ func checkAuth(h http.Handler) http.Handler {
 			})
 
 			if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)) {
-				log.Println("Token de autenticación del usuario '%s' válido", token.Claims.(jwt.MapClaims)["user"])
+				log.Printf("Token del usuario '%s' válido\n", token.Claims.(jwt.MapClaims)["user"])
 				h.ServeHTTP(w, r)
 
 			} else {
-				log.Println("Token de autenticación del usuario '%s' NO válido", token.Claims.(jwt.MapClaims)["user"])
+				log.Printf("Token del usuario '%s' NO válido\n", token.Claims.(jwt.MapClaims)["user"])
 			}
 
 		} else {
