@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Hypercloud-Sync/types"
 	"Hypercloud-Sync/utils"
 	"crypto/aes"
 	"crypto/cipher"
@@ -13,9 +14,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	_ "github.com/go-sql-driver/mysql"
+
 	//"github.com/gorilla/mux"
 	"net/smtp"
 
@@ -29,6 +32,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
@@ -126,6 +130,23 @@ func checkIfUserExists(email string) bool {
 	return exists
 }
 
+func getUserId(email string) int {
+	stmtOut, err := db.Prepare("SELECT id FROM users WHERE email = ?")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer stmtOut.Close()
+
+	var id int
+
+	queryError := stmtOut.QueryRow(email).Scan(&id)
+	if queryError != nil && queryError != sql.ErrNoRows {
+		panic(queryError)
+	}
+
+	return id
+}
+
 func loginUser(w http.ResponseWriter, r *http.Request) {
 
 	var userData map[string]interface{}
@@ -219,7 +240,7 @@ func generateToken(user string) string {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user": user,
-		"exp":  time.Now().Unix() + 1,
+		"exp":  time.Now().Add(time.Hour * 24).Unix(),
 	})
 
 	tokenString, _ := token.SignedString([]byte(os.Getenv("APP_KEY")))
@@ -259,6 +280,54 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getFiles(w http.ResponseWriter, r *http.Request) {
+
+	header := r.Header.Get("Authorization")
+	id := getUserByToken(header)
+	stmtIns, err := db.Prepare("SELECT id, path, size FROM files WHERE user_id = ? ")
+	if err != nil {
+		//panic(err.Error())
+	}
+	defer stmtIns.Close()
+
+	//cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
+
+	var idFile string
+	var path string
+	var size int64
+
+	rows, queryError := stmtIns.Query(id)
+
+	if queryError != nil {
+		panic(queryError)
+	}
+
+	var files = make([]types.File, 0)
+
+	for rows.Next() {
+		rows.Scan(&idFile, &path, &size)
+
+		var file = types.File{
+			Id:   idFile,
+			Name: path,
+			Size: size,
+		}
+
+		files = append(files, file)
+
+	}
+
+	var fileListResponse = types.FilesResponse{
+		Ok:    true,
+		Files: files,
+	}
+
+	data, _ := json.Marshal(fileListResponse)
+
+	w.Write([]byte(data))
+
+}
+
 // Devuelve la clave cifrada con la "pimienta" en base64.
 func encryptHashedPassword(hash []byte) string {
 	// Se decodifica la clave de cifrado que está guardada como variable de entorno.
@@ -291,7 +360,11 @@ func encryptHashedPassword(hash []byte) string {
 
 func upload(w http.ResponseWriter, r *http.Request) {
 
-	file, err := os.Create("./result")
+	filename := r.Header.Get("X-Filename")
+	header := r.Header.Get("Authorization")
+	fmt.Println("Fichero subido: " + filepath.Base(filename))
+	id, _ := uuid.NewUUID()
+	file, err := os.Create("files/" + id.String())
 	if err != nil {
 		log.Panicln("Error al crear el fichero de destino de la subida:")
 		log.Panic(err)
@@ -302,7 +375,43 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		log.Panic(err)
 	}
 
+	stmtIns, err := db.Prepare("INSERT INTO files (id, path, size, user_id) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer stmtIns.Close()
+
+	_, queryError := stmtIns.Exec(id, filepath.Base(filename), n, getUserByToken(header))
+	if queryError != nil {
+		panic(queryError)
+	}
+
 	w.Write([]byte(fmt.Sprintf("%d bytes are recieved.\n", n)))
+
+}
+
+func getUserByToken(header string) int {
+
+	tokens := strings.Split(header, " ")
+
+	if tokens[0] == "Bearer" {
+
+		token, _ := jwt.Parse(tokens[1], func(token *jwt.Token) (interface{}, error) {
+			return []byte(os.Getenv("APP_KEY")), nil
+		})
+		fmt.Println(token)
+		if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)) {
+			return getUserId(token.Claims.(jwt.MapClaims)["user"].(string))
+
+		} else {
+			fmt.Println("Token no válido")
+		}
+
+	} else {
+		fmt.Println("La autenticación no es mediante JWT")
+	}
+
+	return -1
 
 }
 
@@ -479,6 +588,7 @@ func main() {
 	subrouter := r.PathPrefix("/private").Subrouter()
 	subrouter.Use(checkAuth)
 	subrouter.HandleFunc("/upload", upload)
+	subrouter.HandleFunc("/files", getFiles)
 
 	//http.Handle("/", r)
 	log.Println("Servidor HTTP a la escucha en el puerto 8443")

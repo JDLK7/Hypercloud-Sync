@@ -16,6 +16,7 @@ import (
 	"github.com/subosito/gotenv"
 	"io/ioutil"
 	"io"
+	"Hypercloud-Sync/types"
 )
 
 type registerRequest struct {
@@ -137,22 +138,57 @@ func requestAccessCode(email string, hashedPass string){
 			panic(err)
 			panic(n)
 		}
-		filename, err := dialog.File().Title("Select file").Load()
-		fmt.Println(filename)
+		
 		var opt = "0"
 		for opt != "3" {
 			opt = privateMenu()
 			switch opt {
 			case "1": uploadFile()
+				break
+			case "2": listFiles()
+
 			}
 
-			//selectFile()
+
 		}
 
 
 
 
 	}
+}
+
+func listFiles() {
+
+	req, err := http.NewRequest("GET", "https://127.0.0.1:8443/private/files", bytes.NewBuffer([]byte("")))
+
+	req.Header.Set("Authorization", "Bearer " + userJwtToken)
+
+	res, err := (&http.Client{}).Do(req)
+
+	if err != nil {
+		panic(err)
+	}
+	defer res.Body.Close()
+
+	p := make([]byte, 255)
+	n, _ := res.Body.Read(p)
+
+	var verifyDataResponse types.FilesResponse
+
+	json.Unmarshal(p[:n], &verifyDataResponse)
+
+	if verifyDataResponse.Ok {
+		var files = verifyDataResponse.Files
+		fmt.Println("\nListado de ficheros: \n")
+		for index, file := range files {
+
+			fmt.Printf("%d. %s\n", index, string(file.Name))
+		}
+
+		fmt.Println()
+	}
+
 }
 
 func privateMenu() string{
@@ -169,12 +205,13 @@ func privateMenu() string{
 
 func uploadFile() {
 
-	chiperFile := selectFile()
+	chiperFile, filename := selectFile()
 
 	req, err := http.NewRequest("POST", "https://127.0.0.1:8443/private/upload", bytes.NewBuffer(chiperFile))
 
 	req.Header.Set("Content-Type", "binary/octet-stream")
 	req.Header.Set("Authorization", "Bearer " + userJwtToken)
+	req.Header.Set("X-Filename", filename)
 
 	res, err := (&http.Client{}).Do(req)
 
@@ -185,7 +222,7 @@ func uploadFile() {
 	message, _ := ioutil.ReadAll(res.Body)
 	fmt.Printf(string(message))
 }
-func selectFile() []byte{
+func selectFile() ([]byte, string){
 
 	fmt.Println("Abriendo dialogo")
 	filename, err := dialog.File().Title("Select file").Load()
@@ -210,7 +247,7 @@ func selectFile() []byte{
 	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
 
 	cipheredFile := utils.Encrypt(data, key)
-	return cipheredFile
+	return cipheredFile, filename
 	/*filenameEn, _ := dialog.File().Title("Export to XML").Load()
 	fileEn, err := os.Open(filenameEn) // For read access.
 	if err != nil {

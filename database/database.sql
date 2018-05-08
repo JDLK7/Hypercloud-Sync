@@ -53,3 +53,7 @@ ALTER TABLE `files`
 
 ALTER TABLE `files`
   ADD FOREIGN KEY (`user_id`) REFERENCES `users`(`id`); 
+
+ALTER TABLE files MODIFY id varchar(50) NOT NULL;
+
+ALTER TABLE files MODIFY access int(3);
