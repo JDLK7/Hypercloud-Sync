@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Hypercloud-Sync/types"
+	"Hypercloud-Sync/utils"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -12,37 +14,39 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
-	"Hypercloud-Sync/utils"
-	"Hypercloud-Sync/types"
 	"path/filepath"
+	"strconv"
+
 	_ "github.com/go-sql-driver/mysql"
+
 	//"github.com/gorilla/mux"
+	"net/smtp"
+
 	"github.com/subosito/gotenv"
 	"golang.org/x/crypto/bcrypt"
-	"net/smtp"
 	//"github.com/gorilla/mux"
+	"bytes"
 	"crypto/tls"
 	"net"
-	"time"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/gorilla/mux"
-	"github.com/google/uuid"
 	"strings"
-	"bytes"
+	"time"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 type verifyResponse struct {
-	Ok    bool `json:"ok"`
+	Ok      bool   `json:"ok"`
 	Message string `json:"message"`
-	Jwt string `json:"jwt"`
+	Jwt     string `json:"jwt"`
 }
 
 var db *sql.DB
 
-
-
 func connectToDatabase() {
+	log.Println("Intentando abrir conexión con el servidor de base de datos...")
+
 	connectionString := os.Getenv("DB_USERNAME") + ":" + os.Getenv("DB_PASSWORD") +
 		"@tcp(" + os.Getenv("DB_HOST") + ":" + os.Getenv("DB_PORT") + ")/" +
 		os.Getenv("DB_DATABASE")
@@ -52,7 +56,10 @@ func connectToDatabase() {
 	db, error = sql.Open("mysql", connectionString)
 
 	if error != nil {
-		log.Fatal(error)
+		log.Panicln("Error al conectar con el servidor de base de datos")
+		log.Panicln(error)
+	} else {
+		log.Println("Conexión con el servidor de base de datos satisfactoria")
 	}
 
 }
@@ -107,7 +114,8 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 func checkIfUserExists(email string) bool {
 	stmtOut, err := db.Prepare("SELECT EXISTS (SELECT * FROM users WHERE email = ?)")
 	if err != nil {
-		panic(err.Error())
+		log.Panicln("Error al conectar con la BD:")
+		log.Panic(err.Error())
 	}
 	defer stmtOut.Close()
 
@@ -115,12 +123,12 @@ func checkIfUserExists(email string) bool {
 
 	queryError := stmtOut.QueryRow(email).Scan(&exists)
 	if queryError != nil && queryError != sql.ErrNoRows {
-		panic(queryError)
+		log.Panicln("Error al comprobar si un usuario existe:")
+		log.Panic(queryError)
 	}
 
 	return exists
 }
-
 
 func getUserId(email string) int {
 	stmtOut, err := db.Prepare("SELECT id FROM users WHERE email = ?")
@@ -141,35 +149,36 @@ func getUserId(email string) int {
 
 func loginUser(w http.ResponseWriter, r *http.Request) {
 
-
 	var userData map[string]interface{}
 	buf := make([]byte, 512)
 	n, _ := r.Body.Read(buf)
 
 	if err := json.Unmarshal(buf[:n], &userData); err != nil {
-		//panic(err)
-		fmt.Println(err)
+		log.Panicln("Error al parsear datos en JSON de login:")
+		log.Panic(err)
 	}
 
 	stmtIns, err := db.Prepare("SELECT email, password FROM users WHERE email = ? ")
 	if err != nil {
-		//panic(err.Error())
+		log.Panicln("Error al comprobar datos de login en la BD:")
+		log.Panic(err)
 	}
 	defer stmtIns.Close()
-
-	//cipherPass := encryptHashedPassword(hashPassword(userData["password"].(string)))
 
 	var hash, email string
 
 	queryError := stmtIns.QueryRow(userData["email"].(string)).Scan(&email, &hash)
-	hashedPass := decryptHashedPassword(hash)
 	if queryError != nil {
-		//panic(queryError)
+		log.Printf("El usuario '%s' ha intentado iniciar sesión sin estar registrado\n", userData["email"])
+		return
 	}
+
+	hashedPass := decryptHashedPassword(hash)
+
 	var passIn, _ = base64.StdEncoding.DecodeString(userData["password"].(string))
 	if bcrypt.CompareHashAndPassword(hashedPass, passIn) == nil {
 		codigo := generateCode(email)
-		sendMail(email,"Codigo: H-" + string(codigo), "\nIntroduce el siguiente codigo en la aplicación para continuar: H-" + strconv.Itoa(codigo) + "\nEste codigo solo tiene validez durante 1 hora")
+		sendMail(email, "Codigo: H-"+string(codigo), "\nIntroduce el siguiente codigo en la aplicación para continuar: H-"+strconv.Itoa(codigo)+"\nEste codigo solo tiene validez durante 1 hora")
 		w.Write([]byte("Se te ha enviado un email con el código de acceso, por favor comprueba tu bandeja de entrada"))
 	} else {
 		w.Write([]byte("Wrong user or password"))
@@ -184,41 +193,39 @@ func verifyCode(w http.ResponseWriter, r *http.Request) {
 	n, _ := r.Body.Read(buf)
 
 	if err := json.Unmarshal(buf[:n], &verifyData); err != nil {
-		//panic(err)
-		fmt.Println(err)
+		log.Panicln("Error al parsear datos en JSON de código de verificación:")
+		log.Panic(err)
 	}
 
 	stmtIns, err := db.Prepare("SELECT loginCod, timeValid FROM users WHERE email = ?")
 	if err != nil {
-		//panic(err.Error())
+		log.Panicln("Error al comprobar el código de verificación en la BD:")
+		log.Panic(err)
 	}
 	defer stmtIns.Close()
 
 	var loginCode, timeValid string
 
 	queryError := stmtIns.QueryRow(verifyData["email"].(string)).Scan(&loginCode, &timeValid)
-
 	if queryError != nil {
-		//panic(queryError)
+		log.Printf("El usuario '%s' ha introducido un código de verificación no válido\n", verifyData["email"])
 	}
+
 	timeParsed, _ := strconv.ParseInt(timeValid, 10, 64)
 
-	var verifyDataResponse verifyResponse;
+	var verifyDataResponse verifyResponse
 
-	if loginCode == verifyData["code"] && utils.CheckTime(time.Now(), time.Unix(timeParsed,0)) {
-
-
+	if loginCode == verifyData["code"] && utils.CheckTime(time.Now(), time.Unix(timeParsed, 0)) {
 
 		verifyDataResponse = verifyResponse{
-			Ok:    true,
+			Ok:      true,
 			Message: "Access granted",
-			Jwt: generateToken(verifyData["email"].(string)),
+			Jwt:     generateToken(verifyData["email"].(string)),
 		}
-
 
 	} else {
 		verifyDataResponse = verifyResponse{
-			Ok:    false,
+			Ok:      false,
 			Message: "Wrong access code",
 		}
 	}
@@ -231,10 +238,9 @@ func verifyCode(w http.ResponseWriter, r *http.Request) {
 
 func generateToken(user string) string {
 
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user": user,
-		"exp": time.Now().Add(time.Hour * 24).Unix(),
+		"exp":  time.Now().Add(time.Hour * 24).Unix(),
 	})
 
 	tokenString, _ := token.SignedString([]byte(os.Getenv("APP_KEY")))
@@ -248,7 +254,8 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 	n, _ := r.Body.Read(buf)
 
 	if err := json.Unmarshal(buf[:n], &userData); err != nil {
-		panic(err)
+		log.Panicln("Error al parsear datos en JSON de registro:")
+		log.Panic(err)
 	}
 
 	if !checkIfUserExists(userData["email"].(string)) {
@@ -263,7 +270,8 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 
 		_, queryError := stmtIns.Exec(userData["email"].(string), cipherPass, userData["name"].(string))
 		if queryError != nil {
-			panic(queryError)
+			log.Panicf("Error al registrar el usuario '%s' en la BD:\n", userData["email"])
+			log.Panic(err)
 		}
 
 		w.Write([]byte("Correctly registered user"))
@@ -294,13 +302,13 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 		panic(queryError)
 	}
 
-	var  files  = make([]types.File, 0)
+	var files = make([]types.File, 0)
 
 	for rows.Next() {
 		rows.Scan(&idFile, &path, &size)
 
 		var file = types.File{
-			Id:	idFile,
+			Id:   idFile,
 			Name: path,
 			Size: size,
 		}
@@ -310,10 +318,9 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fileListResponse = types.FilesResponse{
-		Ok: true,
+		Ok:    true,
 		Files: files,
 	}
-
 
 	data, _ := json.Marshal(fileListResponse)
 
@@ -329,7 +336,8 @@ func encryptHashedPassword(hash []byte) string {
 	// Se instancia el cifrador
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		log.Panicln("Error al instanciar el cifrador AES:")
+		log.Panic(err)
 	}
 
 	// El vector de inicialización debe ser único, pero no seguro. Por lo tanto,
@@ -338,7 +346,8 @@ func encryptHashedPassword(hash []byte) string {
 	iv := ciphertext[:aes.BlockSize]
 
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		panic(err)
+		log.Panicln("Error al inicializar el vector de inicialización:")
+		log.Panic(err)
 	}
 
 	// Se cifra el hash.
@@ -357,11 +366,13 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	id, _ := uuid.NewUUID()
 	file, err := os.Create("files/" + id.String())
 	if err != nil {
-		panic(err)
+		log.Panicln("Error al crear el fichero de destino de la subida:")
+		log.Panic(err)
 	}
 	n, err := io.Copy(file, r.Body)
 	if err != nil {
-		panic(err)
+		log.Panicln("Error al copiar el contenido de la subida en el fichero de destino:")
+		log.Panic(err)
 	}
 
 	stmtIns, err := db.Prepare("INSERT INTO files (id, path, size, user_id) VALUES (?, ?, ?, ?)")
@@ -369,7 +380,6 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		panic(err.Error())
 	}
 	defer stmtIns.Close()
-
 
 	_, queryError := stmtIns.Exec(id, filepath.Base(filename), n, getUserByToken(header))
 	if queryError != nil {
@@ -380,7 +390,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func getUserByToken(header string) int{
+func getUserByToken(header string) int {
 
 	tokens := strings.Split(header, " ")
 
@@ -390,9 +400,8 @@ func getUserByToken(header string) int{
 			return []byte(os.Getenv("APP_KEY")), nil
 		})
 		fmt.Println(token)
-		if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)){
+		if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)) {
 			return getUserId(token.Claims.(jwt.MapClaims)["user"].(string))
-
 
 		} else {
 			fmt.Println("Token no válido")
@@ -417,7 +426,8 @@ func decryptHashedPassword(cipherPassword string) []byte {
 	// Se instancia el cifrador.
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		log.Panicln("Error al instanciar el cifrador AES:")
+		log.Panic(err)
 	}
 
 	// Se recupera el vector de inicialización del texto cifrado.
@@ -441,17 +451,23 @@ func hashPassword(password string) []byte {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.DefaultCost)
 	if err != nil {
-		panic(err)
+		log.Panicln("Error al hacer hash + salt de la contraseña:")
+		log.Panic(err)
 	}
 
 	return hashedPassword
 }
 
-func sendMail(email string, subject string, message string) bool{
+func sendMail(email string, subject string, message string) bool {
+
+	log.Println("Intentando abrir conexión con el servidor de correo...")
+
 	// Set up authentication information.
 	conn, err := net.Dial("tcp", "smtp.gmail.com:465")
 	if err != nil {
-		fmt.Println(err)
+		log.Println("Error al conectar con el servidor de correo:")
+		log.Print(err)
+
 		return false
 	}
 	auth := smtp.PlainAuth(
@@ -464,16 +480,17 @@ func sendMail(email string, subject string, message string) bool{
 	// TLS
 	tlsconfig := &tls.Config{
 		InsecureSkipVerify: true,
-		ServerName: "smtp.gmail.com",
+		ServerName:         "smtp.gmail.com",
 	}
 
 	conn = tls.Client(conn, tlsconfig)
 	client, err := smtp.NewClient(conn, "smtp.gmail.com")
-	fmt.Println("Autenticado")
+
+	log.Println("Conexión con el servidor de correo satisfactoria")
+
 	// Connect to the server, authenticate, set the sender and recipient,
 	// and send the email all in one step.
 	client.StartTLS(tlsconfig)
-
 
 	client.Auth(auth)
 	client.Mail("hypercloud17@gmail.com")
@@ -484,19 +501,21 @@ func sendMail(email string, subject string, message string) bool{
 	err = w.Close()
 	client.Quit()
 
-
-
-	fmt.Println("Intentando mensaje")
+	log.Println("Intentando enviar correo...")
 	if err != nil {
+		log.Fatalln("Error al enviar el correo")
 		log.Fatal(err)
+
 		return false
-	} else {
-		return true
 	}
+
+	log.Println("Correo enviado correctamente")
+
+	return true
 
 }
 
-func generateCode(email string) int{
+func generateCode(email string) int {
 
 	code := utils.Random(100000, 99999999)
 
@@ -506,9 +525,10 @@ func generateCode(email string) int{
 	}
 	defer stmtIns.Close()
 
-	_, queryError := stmtIns.Exec(code, time.Now().Add(time.Hour).Unix() ,email)
+	_, queryError := stmtIns.Exec(code, time.Now().Add(time.Hour).Unix(), email)
 	if queryError != nil {
-		panic(queryError)
+		log.Panicln("Error al intentar introducir el código de verificación en la BD:")
+		log.Panic(err)
 	}
 
 	return code
@@ -525,17 +545,17 @@ func checkAuth(h http.Handler) http.Handler {
 			token, _ := jwt.Parse(tokens[1], func(token *jwt.Token) (interface{}, error) {
 				return []byte(os.Getenv("APP_KEY")), nil
 			})
-			fmt.Println(token)
-			if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)){
-				fmt.Println("Token válido")
+
+			if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)) {
+				log.Println("Token de autenticación del usuario '%s' válido", token.Claims.(jwt.MapClaims)["user"])
 				h.ServeHTTP(w, r)
 
 			} else {
-				fmt.Println("Token no válido")
+				log.Println("Token de autenticación del usuario '%s' NO válido", token.Claims.(jwt.MapClaims)["user"])
 			}
 
 		} else {
-			fmt.Println("La autenticación no es mediante JWT")
+			log.Println("La autenticación no es mediante JWT")
 		}
 	})
 }
@@ -547,6 +567,14 @@ func init() {
 }
 
 func main() {
+	f, err := os.OpenFile("logs/server.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Error opening file: %v", err)
+	}
+	defer f.Close()
+
+	log.SetOutput(f)
+
 	connectToDatabase()
 	defer db.Close()
 	//getUsers()
@@ -563,8 +591,7 @@ func main() {
 	subrouter.HandleFunc("/files", getFiles)
 
 	//http.Handle("/", r)
+	log.Println("Servidor HTTP a la escucha en el puerto 8443")
 	http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", r)
-
-
 
 }
