@@ -10,3 +10,7 @@ type FilesResponse struct {
 	Ok    bool `json:"ok"`
 	Files []File `json:"files"`
 }
+
+type FileDownloadRequest struct {
+	Id    string `json:"id"`
+}

@@ -12,11 +12,12 @@ import (
 	//"github.com/sqweek/dialog"
 	"github.com/sqweek/dialog"
 	"os"
-	"encoding/base64"
 	"github.com/subosito/gotenv"
 	"io/ioutil"
 	"io"
 	"Hypercloud-Sync/types"
+	"encoding/base64"
+	"strconv"
 )
 
 type registerRequest struct {
@@ -37,7 +38,7 @@ type verifyRequest struct {
 
 var conn *tls.Conn
 
-var userToken string;
+var userHash []byte;
 var userJwtToken string;
 
 // Pregunta al usuario los datos de registro y
@@ -127,16 +128,20 @@ func requestAccessCode(email string, hashedPass string){
 	fmt.Println(verifyDataResponse["message"])
 
 	if verifyDataResponse["ok"].(bool) {
-		userToken = hashedPass
+		userHash, _ = base64.StdEncoding.DecodeString(hashedPass)
+
 		userJwtToken = verifyDataResponse["jwt"].(string)
 		file, err := os.Create("./token")
-		if err != nil {
+		file2, err2 := os.Create("./hash")
+		if err != nil && err2 != nil {
 			panic(err)
 		}
 		n , err := io.Copy(file, bytes.NewBuffer([]byte(verifyDataResponse["jwt"].(string))))
-		if err != nil {
+		n2 , err2 := io.Copy(file2, bytes.NewBuffer([]byte(userHash)))
+		if err != nil && err2 != nil{
 			panic(err)
 			panic(n)
+			panic(n2)
 		}
 		
 		var opt = "0"
@@ -146,10 +151,10 @@ func requestAccessCode(email string, hashedPass string){
 			case "1": uploadFile()
 				break
 			case "2": listFiles()
+				break
+			case "3": download()
 
 			}
-
-
 		}
 
 
@@ -158,7 +163,68 @@ func requestAccessCode(email string, hashedPass string){
 	}
 }
 
-func listFiles() {
+func download()  {
+
+	var files = listFiles()
+
+	var id = -1
+	fmt.Print("Selecciona un fichero: ")
+	fmt.Scanf("%d", &id)
+	if id < 0 || id > len(files) {
+		fmt.Println("El fichero seleccionado no existe")
+	} else {
+
+		var file = files[id]
+
+		var fileRequest = types.FileDownloadRequest{
+			Id: file.Id,
+		}
+
+		request, _ := json.Marshal(fileRequest)
+
+		req, err := http.NewRequest("POST", "https://127.0.0.1:8443/private/download", bytes.NewBuffer(request))
+
+		if err != nil {
+			panic(err)
+		}
+
+		req.Header.Set("Authorization", "Bearer " + userJwtToken)
+
+		res, err := (&http.Client{}).Do(req)
+
+		if err != nil {
+			panic(err)
+		}
+		defer res.Body.Close()
+
+		size, _ := strconv.ParseInt(res.Header.Get("X-Size"), 10, 64)
+		fmt.Println(size)
+		p := make([]byte, size)
+		n, _ := res.Body.Read(p)
+
+		saveFile(p[:n], res.Header.Get("X-Filename"))
+	}
+
+
+}
+
+func saveFile(fileEncryptBytes []byte, fileNameIn string)  {
+
+	filename, err := dialog.File().Save()
+
+
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(len(fileEncryptBytes))
+	fileDecrypt, err := utils.Decrypt(string(fileEncryptBytes), []byte(userHash[len(userHash)/2:]))
+
+	ioutil.WriteFile(filename, []byte(fileDecrypt), 0777)
+
+}
+
+func listFiles() []types.File{
 
 	req, err := http.NewRequest("GET", "https://127.0.0.1:8443/private/files", bytes.NewBuffer([]byte("")))
 
@@ -174,12 +240,12 @@ func listFiles() {
 	p := make([]byte, 255)
 	n, _ := res.Body.Read(p)
 
-	var verifyDataResponse types.FilesResponse
+	var filesResponse types.FilesResponse
 
-	json.Unmarshal(p[:n], &verifyDataResponse)
-
-	if verifyDataResponse.Ok {
-		var files = verifyDataResponse.Files
+	json.Unmarshal(p[:n], &filesResponse)
+	var files = make([]types.File, 0)
+	if filesResponse.Ok {
+		files = filesResponse.Files
 		fmt.Println("\nListado de ficheros: \n")
 		for index, file := range files {
 
@@ -188,6 +254,8 @@ func listFiles() {
 
 		fmt.Println()
 	}
+
+	return files
 
 }
 
@@ -220,7 +288,12 @@ func uploadFile() {
 	}
 	defer res.Body.Close()
 	message, _ := ioutil.ReadAll(res.Body)
-	fmt.Printf(string(message))
+
+	if string(message) == "Token no valido" {
+		fmt.Println("Sesión caducada")
+		login()
+	}
+
 }
 func selectFile() ([]byte, string){
 
@@ -244,30 +317,12 @@ func selectFile() ([]byte, string){
 		log.Fatal(count)
 	}
 
-	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
+	key := []byte(userHash[len(userHash)/2:])
 
-	cipheredFile := utils.Encrypt(data, key)
-	return cipheredFile, filename
-	/*filenameEn, _ := dialog.File().Title("Export to XML").Load()
-	fileEn, err := os.Open(filenameEn) // For read access.
-	if err != nil {
-		log.Fatal(err)
-	}
-	fiEn, err := fileEn.Stat()
-	dataEn := make([]byte, fiEn.Size())
-	countEn, err := fileEn.Read(dataEn)
-	fmt.Println(dataEn)
-	if err != nil {
-		log.Fatal(countEn)
-	}
+	cipheredText, err := utils.Encrypt(data, key)
 
+	return []byte(cipheredText), filename
 
-	utils.Decrypt(dataEn, key)*/
-	//fmt.Printf("read %d bytes: %q\n", count, data[:count])
-	/*fileDecrypted := utils.Decrypt(string(fileEncrypted), key)
-
-	ioutil.WriteFile("./prueba.pdf", fileDecrypted, 0777)
-	ioutil.WriteFile("./pruebaDes.pdf", []byte(fileEncrypted), 0777)*/
 }
 
 func menu() string{
@@ -287,21 +342,67 @@ func init() {
 	gotenv.Load()
 }
 
+func readPasswords() {
+
+	file, err := os.Open("./token")
+	file2, err := os.Open("./hash")
+
+	fi, err := file.Stat()
+	data := make([]byte, fi.Size())
+	data2 := make([]byte, fi.Size())
+	count, err := file.Read(data)
+	count2, err2 := file2.Read(data2)
+
+	if err != nil {
+		userJwtToken = ""
+	} else {
+		userJwtToken = string(data[:count])
+	}
+
+	if err2 != nil {
+		userHash = make([]byte, 256)
+	} else {
+		userHash = data[:count2]
+	}
+
+}
+
 func main() {
+
+	readPasswords();
+
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
+
 	if err != nil {
 		log.Fatalf("server: loadkeys: %s", err)
 	}
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
 
 
-	var opt = "0"
-	for opt != "3" {
-		opt = menu()
-		switch opt {
-			case "1": register()
+	if userJwtToken != "" {
+		var opt = "0"
+		for opt != "3" {
+			opt = privateMenu()
+			switch opt {
+			case "1": uploadFile()
 				break
-			case "2": login()
+			case "2": listFiles()
+				break
+			case "3": download()
+
+			}
+		}
+	} else {
+		var opt= "0"
+		for opt != "3" {
+			opt = menu()
+			switch opt {
+			case "1":
+				register()
+				break
+			case "2":
+				login()
+			}
 		}
 	}
 }
