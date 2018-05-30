@@ -17,6 +17,8 @@ import (
 	"io/ioutil"
 	"io"
 	"Hypercloud-Sync/types"
+	"golang.org/x/crypto/ssh/terminal"
+	"syscall"
 )
 
 type registerRequest struct {
@@ -49,8 +51,10 @@ func register() {
 	fmt.Scanf("%s\n", &name)
 	fmt.Print("Email: ")
 	fmt.Scanf("%s\n", &email)
-	fmt.Print("Password: ")
-	fmt.Scanf("%s\n", &password)
+	
+	fmt.Print("Password:\n")
+	bytePassword, _ := terminal.ReadPassword(int(syscall.Stdin))
+    password = string(bytePassword)
 
 	userData := registerRequest{
 		Name:     name,
@@ -78,8 +82,9 @@ func login() {
 
 	fmt.Print("Email: ")
 	fmt.Scanf("%s\n", &email)
-	fmt.Print("Password: ")
-	fmt.Scanf("%s\n", &password)
+	fmt.Print("Password:\n")
+	bytePassword, _ := terminal.ReadPassword(int(syscall.Stdin))
+    password = string(bytePassword)
 
 	hashedPass := utils.Hash(password)
 	userData := loginRequest{
@@ -222,6 +227,7 @@ func uploadFile() {
 	message, _ := ioutil.ReadAll(res.Body)
 	fmt.Printf(string(message))
 }
+
 func selectFile() ([]byte, string){
 
 	fmt.Println("Abriendo dialogo")
