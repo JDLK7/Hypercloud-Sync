@@ -113,6 +113,11 @@ func login() {
 
 }
 
+func clearSession() {
+	os.Remove("token")
+	os.Remove("hash")
+}
+
 func requestAccessCode(email string, hashedPass string){
 	var codigo string
 	fmt.Print("Codigo: H-")
@@ -300,7 +305,8 @@ func uploadFile() {
 
 	if string(message) == "Token no valido" {
 		fmt.Println("Sesión caducada")
-		login()
+		clearSession()
+		menuScreen()
 	}
 
 }
@@ -382,6 +388,34 @@ func readPasswords() {
 
 }
 
+func menuScreen() {
+	var opt = "0"
+	for opt != "q" && opt != "Q" {
+		opt = menu()
+		switch opt {
+			case "1":
+				register()
+				break
+			case "2":
+				login()
+		}
+	}
+}
+
+func privateMenuScreen() {
+	var opt = "0"
+	for opt != "q" && opt != "Q" {
+		opt = privateMenu()
+		switch opt {
+			case "1": uploadFile()
+				break
+			case "2": listFiles()
+				break
+			case "3": download()
+		}
+	}
+}
+
 func main() {
 
 	readPasswords();
@@ -395,28 +429,8 @@ func main() {
 
 
 	if userJwtToken != "" {
-		var opt = "0"
-		for opt != "q" && opt != "Q" {
-			opt = privateMenu()
-			switch opt {
-				case "1": uploadFile()
-					break
-				case "2": listFiles()
-					break
-				case "3": download()
-			}
-		}
+		privateMenuScreen()
 	} else {
-		var opt = "0"
-		for opt != "q" && opt != "Q" {
-			opt = menu()
-			switch opt {
-				case "1":
-					register()
-					break
-				case "2":
-					login()
-			}
-		}
+		menuScreen()
 	}
 }
