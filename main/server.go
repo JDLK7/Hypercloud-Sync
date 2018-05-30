@@ -285,9 +285,15 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 
 	header := r.Header.Get("Authorization")
 	id := getUserByToken(header)
-	stmtIns, err := db.Prepare("SELECT id, path, size FROM files WHERE user_id = ? ")
+	stmtIns, err := db.Prepare(`
+		SELECT ANY_VALUE(id) as id, path, ANY_VALUE(size) as size, MAX(updated_at) as updated_at
+		FROM files 
+		WHERE user_id = ?
+		GROUP BY path
+	`)
 	if err != nil {
-		//panic(err.Error())
+		log.Panicln("Error al recuperar el listado de ficheros del usuario:")
+		log.Panic(err)
 	}
 	defer stmtIns.Close()
 
@@ -296,6 +302,7 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 	var idFile string
 	var path string
 	var size int64
+	var updatedAt string
 
 	rows, queryError := stmtIns.Query(id)
 
@@ -306,7 +313,7 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 	var files = make([]types.File, 0)
 
 	for rows.Next() {
-		rows.Scan(&idFile, &path, &size)
+		rows.Scan(&idFile, &path, &size, &updatedAt)
 
 		var file = types.File{
 			Id:   idFile,
