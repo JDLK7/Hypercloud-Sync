@@ -16,12 +16,17 @@ CREATE TABLE `users` (
 --
 
 CREATE TABLE `files` (
-	`id` int(11) NOT NULL,
+	`id` varchar(50) NOT NULL,
 	`path` varchar(255) NOT NULL,
 	`size` BIGINT NOT NULL,
 	`updated_at` TIMESTAMP NOT NULL,
-	`access` int(3) NOT NULL,
+	`access` int(3),
 	`user_id` int(11) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE `versions` (
+	`file_id` varchar(50) NOT NULL,
+	`version_id` varchar(50) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
@@ -46,14 +51,13 @@ ALTER TABLE `users`
 
 ALTER TABLE `files`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `path` (`path`);
+  ADD FOREIGN KEY (`user_id`) REFERENCES `users`(`id`);
 
-ALTER TABLE `files`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+--
+-- Claves y restricciones de la tabla 'versions'
+--
 
-ALTER TABLE `files`
-  ADD FOREIGN KEY (`user_id`) REFERENCES `users`(`id`); 
-
-ALTER TABLE files MODIFY id varchar(50) NOT NULL;
-
-ALTER TABLE files MODIFY access int(3);
+ALTER TABLE `versions`
+  ADD PRIMARY KEY (`file_id`, `version_id`),
+  ADD FOREIGN KEY (`file_id`) REFERENCES `files`(`id`),
+  ADD FOREIGN KEY (`version_id`) REFERENCES `files`(`id`);
