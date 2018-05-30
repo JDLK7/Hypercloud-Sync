@@ -53,9 +53,10 @@ func register() {
 	fmt.Print("Email: ")
 	fmt.Scanf("%s\n", &email)
 	
-	fmt.Print("Password:\n")
+	fmt.Print("Password: ")
 	bytePassword, _ := terminal.ReadPassword(int(syscall.Stdin))
-    password = string(bytePassword)
+	password = string(bytePassword)
+	fmt.Println()
 
 	userData := registerRequest{
 		Name:     name,
@@ -83,9 +84,11 @@ func login() {
 
 	fmt.Print("Email: ")
 	fmt.Scanf("%s\n", &email)
-	fmt.Print("Password:\n")
+	
+	fmt.Print("Password: ")
 	bytePassword, _ := terminal.ReadPassword(int(syscall.Stdin))
-    password = string(bytePassword)
+	password = string(bytePassword)
+	fmt.Println()
 
 	hashedPass := utils.Hash(password)
 	userData := loginRequest{
@@ -264,12 +267,13 @@ func listFiles() []types.File{
 
 }
 
-func privateMenu() string{
+func privateMenu() string {
 
 	var opt string
 	fmt.Println("1. Subir fichero")
 	fmt.Println("2. Listar ficheros")
 	fmt.Println("3. Descargar fichero")
+	fmt.Println("q. Salir")
 	fmt.Print("Opción: ")
 	fmt.Scanf("%s\n", &opt)
 
@@ -335,7 +339,7 @@ func menu() string{
 	var opt string
 	fmt.Println("1. Registrarse")
 	fmt.Println("2. Login")
-	fmt.Println("3. Salir")
+	fmt.Println("q. Salir")
 	fmt.Print("Opción: ")
 	fmt.Scanf("%s\n", &opt)
 
@@ -351,6 +355,11 @@ func init() {
 func readPasswords() {
 
 	file, err := os.Open("./token")
+	if err != nil {
+		log.Println("No se ha podido recuperar el token de autenticación del usuario")
+		return
+	}
+
 	file2, err := os.Open("./hash")
 
 	fi, err := file.Stat()
@@ -387,27 +396,26 @@ func main() {
 
 	if userJwtToken != "" {
 		var opt = "0"
-		for opt != "3" {
+		for opt != "q" && opt != "Q" {
 			opt = privateMenu()
 			switch opt {
-			case "1": uploadFile()
-				break
-			case "2": listFiles()
-				break
-			case "3": download()
-
+				case "1": uploadFile()
+					break
+				case "2": listFiles()
+					break
+				case "3": download()
 			}
 		}
 	} else {
-		var opt= "0"
-		for opt != "3" {
+		var opt = "0"
+		for opt != "q" && opt != "Q" {
 			opt = menu()
 			switch opt {
-			case "1":
-				register()
-				break
-			case "2":
-				login()
+				case "1":
+					register()
+					break
+				case "2":
+					login()
 			}
 		}
 	}
