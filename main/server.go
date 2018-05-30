@@ -34,6 +34,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"io/ioutil"
 )
 
 type verifyResponse struct {
@@ -333,6 +334,7 @@ func encryptHashedPassword(hash []byte) string {
 	// Se decodifica la clave de cifrado que está guardada como variable de entorno.
 	key, _ := base64.StdEncoding.DecodeString(os.Getenv("APP_KEY"))
 
+
 	// Se instancia el cifrador
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -390,6 +392,51 @@ func upload(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte(fmt.Sprintf("%d bytes are recieved.\n", n)))
 
+}
+
+func downloadFile(w http.ResponseWriter, r *http.Request) {
+
+	var downloadData types.FileDownloadRequest
+
+	buf := make([]byte, 512)
+	n, _ := r.Body.Read(buf)
+
+	if err := json.Unmarshal(buf[:n], &downloadData); err != nil {
+		log.Panicln("Error al parsear datos en JSON de descarga:")
+		log.Panic(err)
+	}
+
+	filename := "files/" + downloadData.Id
+
+	file, err := os.Open(filename) // For read access.
+	if err != nil {
+		log.Fatal(err)
+	}
+	fi, err := file.Stat()
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stmtOut, err := db.Prepare("SELECT path FROM files WHERE id = ?")
+	if err != nil {
+		log.Panicln("Error al conectar con la BD:")
+		log.Panic(err.Error())
+	}
+	defer stmtOut.Close()
+
+	var name string
+
+	queryError := stmtOut.QueryRow(downloadData.Id).Scan(&name)
+	if queryError != nil && queryError != sql.ErrNoRows {
+		log.Panic(queryError)
+	}
+
+	w.Header().Set("X-Filename", name)
+	fmt.Println(fi.Size())
+	sizeStr := strconv.FormatInt(fi.Size(), 10)
+	w.Header().Set("X-Size", sizeStr)
+	w.Write(data)
 }
 
 func getUserByToken(header string) int {
@@ -553,6 +600,7 @@ func checkAuth(h http.Handler) http.Handler {
 				h.ServeHTTP(w, r)
 
 			} else {
+				w.Write([]byte("Token no valido"))
 				log.Printf("Token del usuario '%s' NO válido\n", token.Claims.(jwt.MapClaims)["user"])
 			}
 
@@ -569,6 +617,7 @@ func init() {
 }
 
 func main() {
+
 	f, err := os.OpenFile("logs/server.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Error opening file: %v", err)
@@ -591,6 +640,7 @@ func main() {
 	subrouter.Use(checkAuth)
 	subrouter.HandleFunc("/upload", upload)
 	subrouter.HandleFunc("/files", getFiles)
+	subrouter.HandleFunc("/download", downloadFile)
 
 	//http.Handle("/", r)
 	log.Println("Servidor HTTP a la escucha en el puerto 8443")

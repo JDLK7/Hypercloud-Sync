@@ -5,11 +5,11 @@ import (
 	"encoding/base64"
 	"time"
 	mRand "math/rand"
-	cRand "crypto/rand"
 	"crypto/aes"
-	"io"
 	"crypto/cipher"
-	"io/ioutil"
+	"errors"
+	"io"
+	"crypto/rand"
 )
 
 // Devuelve el hash de la contraseña en base64.
@@ -32,9 +32,9 @@ func CheckTime(start, end time.Time) bool {
 
 
 // Devuelve la clave cifrada con la "pimienta" en base64.
-func Encrypt(text []byte, key []byte) []byte {
+func Encrypt(message []byte, key []byte) (encmess string, err error) {
 
-	block, err := aes.NewCipher(key)
+	/*block, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +51,7 @@ func Encrypt(text []byte, key []byte) []byte {
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], text)
 
 
-	return ciphertext
+	return ciphertext*/
 	// create a new file for saving the encrypted data.
 	/*f, err := os.Create("a_aes.pdf")
 	if err != nil {
@@ -63,11 +63,33 @@ func Encrypt(text []byte, key []byte) []byte {
 	}*/
 
 	// done
+
+	plainText := message
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return
+	}
+
+	//IV needs to be unique, but doesn't have to be secure.
+	//It's common to put it at the beginning of the ciphertext.
+	cipherText := make([]byte, aes.BlockSize+len(plainText))
+	iv := cipherText[:aes.BlockSize]
+	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+		return
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(cipherText[aes.BlockSize:], plainText)
+
+	//returns to base64 encoded string
+	encmess = base64.URLEncoding.EncodeToString(cipherText)
+	return
 }
 
 // Devuelve la clave descifrada como []byte
-func Decrypt(ciphertext []byte, key []byte, name string) {
-
+func Decrypt(securemess string, key []byte) (decodedmess string, err error){
+	/*
 	// Create the AES cipher
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -92,5 +114,32 @@ func Decrypt(ciphertext []byte, key []byte, name string) {
 	// Decrypt bytes from ciphertext
 	stream.XORKeyStream(ciphertext, ciphertext)
 
-	ioutil.WriteFile(name, ciphertext, 0777)
+	return ciphertext*/
+
+	cipherText, err := base64.URLEncoding.DecodeString(securemess)
+	if err != nil {
+		return
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return
+	}
+
+	if len(cipherText) < aes.BlockSize {
+		err = errors.New("Ciphertext block size is too short!")
+		return
+	}
+
+	//IV needs to be unique, but doesn't have to be secure.
+	//It's common to put it at the beginning of the ciphertext.
+	iv := cipherText[:aes.BlockSize]
+	cipherText = cipherText[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	// XORKeyStream can work in-place if the two arguments are the same.
+	stream.XORKeyStream(cipherText, cipherText)
+
+	decodedmess = string(cipherText)
+	return
 }
