@@ -75,17 +75,21 @@ func register() {
 
 
 	res, err := http.Post(fmt.Sprintf("%s/register", baseURL), "application/json", bytes.NewBuffer(request))
-
 	if err != nil {
-		log.Fatalf("client: write: %s", err)
+		clearScreen()
+		color.Red("\nError al realizar el registro\n")
+		color.Red("Compruebe su conexión y vuelva a intentarlo\n\n")
+		
+		return
 	}
+
 	body := res.Body
 
 	p := make([]byte, 30)
 	n, err := body.Read(p)
-	fmt.Println(string(p[:n]))
 
 	clearScreen()
+	color.Blue("Respuesta del servidor: %s\n\n", string(p[:n]))
 	menuScreen()
 }
 
@@ -110,9 +114,12 @@ func login() {
 	request, _ := json.Marshal(userData)
 
 	res, err := http.Post(fmt.Sprintf("%s/login", baseURL), "application/json", bytes.NewBuffer(request))
-
 	if err != nil {
-		log.Fatalf("client: write: %s", err)
+		clearScreen()
+		color.Red("\nError al realizar el login\n")
+		color.Red("Compruebe su conexión y vuelva a intentarlo\n\n")
+
+		return
 	}
 	body := res.Body
 
@@ -151,6 +158,8 @@ func requestAccessCode(email string, hashedPass string){
 	var verifyDataResponse map[string]interface{}
 
 	json.Unmarshal(p[:n], &verifyDataResponse)
+
+	// Meter condicion de status code para comprobar si el login es incorrecto
 	fmt.Println(verifyDataResponse["message"])
 
 	if verifyDataResponse["ok"].(bool) {
@@ -159,12 +168,15 @@ func requestAccessCode(email string, hashedPass string){
 		userJwtToken = verifyDataResponse["jwt"].(string)
 		file, err := os.Create("./token")
 		file2, err2 := os.Create("./hash")
-		if err != nil && err2 != nil {
+		if err != nil || err2 != nil {
+			color.Red("No se han podido crear los archivos necesarios para guardar la sesión")
 			panic(err)
 		}
+
 		n , err := io.Copy(file, bytes.NewBuffer([]byte(verifyDataResponse["jwt"].(string))))
 		n2 , err2 := io.Copy(file2, bytes.NewBuffer([]byte(userHash)))
-		if err != nil && err2 != nil{
+		if err != nil || err2 != nil{
+			color.Red("No se han podido guardar los datos de la sesión")
 			panic(err)
 			panic(n)
 			panic(n2)
@@ -220,7 +232,6 @@ func download(isVersion bool) {
 		request, _ := json.Marshal(fileRequest)
 
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/private/download", baseURL), bytes.NewBuffer(request))
-
 		if err != nil {
 			panic(err)
 		}
@@ -228,9 +239,12 @@ func download(isVersion bool) {
 		req.Header.Set("Authorization", "Bearer " + userJwtToken)
 
 		res, err := (&http.Client{}).Do(req)
-
 		if err != nil {
-			panic(err)
+			clearScreen()
+			color.Red("\nError al realizar la descarga del fichero\n")
+			color.Red("Compruebe su conexión y vuelva a intentarlo\n\n")
+	
+			return
 		}
 		defer res.Body.Close()
 
@@ -264,9 +278,12 @@ func listFiles() []types.File {
 	req.Header.Set("Authorization", "Bearer " + userJwtToken)
 
 	res, err := (&http.Client{}).Do(req)
-
 	if err != nil {
-		panic(err)
+		clearScreen()
+		color.Red("\nError al listar los ficheros\n")
+		color.Red("Compruebe su conexión y vuelva a intentarlo\n\n")
+
+		return nil
 	}
 	defer res.Body.Close()
 
@@ -285,7 +302,6 @@ func listFiles() []types.File {
 		defer color.Unset()
 
 		for index, file := range files {
-
 			fmt.Printf("%d. %s\n", index, string(file.Name))
 		}
 
@@ -323,8 +339,11 @@ func listFileVersions() []types.File {
 	
 	res, err := (&http.Client{}).Do(req)
 	if err != nil {
-		log.Panicln("Ha ocurrido un error al intentar listar las versiones de un fichero")
-		panic(err)
+		clearScreen()
+		color.Red("\nError al listar las versiones del fichero\n")
+		color.Red("Compruebe su conexión y vuelva a intentarlo\n\n")
+
+		return nil
 	}
 
 	defer res.Body.Close()
@@ -347,7 +366,6 @@ func listFileVersions() []types.File {
 		defer color.Unset()
 
 		for index, version := range versions {
-
 			fmt.Printf("%d. %s - %s\n", index, string(version.Name), string(version.Date))
 		}
 
@@ -367,7 +385,9 @@ func privateMenu() string {
 	fmt.Println("3. Listar versiones de un fichero")
 	fmt.Println("4. Descargar fichero")
 	fmt.Println("5. Descargar versión de un fichero")
-	fmt.Println("q. Salir")
+	fmt.Println("----------------------------------")
+	fmt.Println("s. Cerrar sesión")
+	fmt.Println("q. Salir\n")
 	fmt.Print("Opción: ")
 	fmt.Scanf("%s\n", &opt)
 
@@ -451,7 +471,6 @@ func readPasswords() {
 
 	file, err := os.Open("./token")
 	if err != nil {
-		// log.Println("No se ha podido recuperar el token de autenticación del usuario")
 		return
 	}
 
@@ -495,7 +514,7 @@ func menuScreen() {
 
 func privateMenuScreen() {
 	var opt = "0"
-	for opt != "q" && opt != "Q" {
+	for opt != "q" && opt != "Q" && opt != "s" && opt != "S" {
 		opt = privateMenu()
 		switch opt {
 			case "1": uploadFile()
@@ -507,6 +526,10 @@ func privateMenuScreen() {
 			case "4": download(/*isVersion*/ false) 
 				break
 			case "5": download(/*isVersion*/ true)
+				break
+			case "s":
+				clearSession() 
+				clearScreen()
 				break
 			default: clearScreen()
 		}
