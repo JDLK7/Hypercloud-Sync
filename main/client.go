@@ -54,6 +54,7 @@ func clearScreen() {
 func register() {
 	var email, password, name string
 
+	clearScreen()
 	fmt.Print("Name: ")
 	fmt.Scanf("%s\n", &name)
 	fmt.Print("Email: ")
@@ -83,11 +84,15 @@ func register() {
 	p := make([]byte, 30)
 	n, err := body.Read(p)
 	fmt.Println(string(p[:n]))
+
+	clearScreen()
+	menuScreen()
 }
 
 func login() {
 	var email, password string
 
+	clearScreen()
 	fmt.Print("Email: ")
 	fmt.Scanf("%s\n", &email)
 	
@@ -133,10 +138,12 @@ func requestAccessCode(email string, hashedPass string){
 		Email: email,
 		Code: codigo,
 	}
-	fmt.Println("Intentando peticion")
+
 	request, _ := json.Marshal(verifyData)
 	res, _ := http.Post(fmt.Sprintf("%s/verify", baseURL), "application/json", bytes.NewBuffer(request))
-	fmt.Println("Peticion hecha")
+
+	fmt.Println("Comprobando credenciales...")
+
 	body := res.Body
 	p := make([]byte, 255)
 	n, _ := body.Read(p)
@@ -163,7 +170,8 @@ func requestAccessCode(email string, hashedPass string){
 			panic(n2)
 		}
 		
-		privateMenu()
+		clearScreen()
+		privateMenuScreen()
 	}
 }
 
@@ -439,15 +447,13 @@ func init() {
 	gotenv.Load()
 
 	baseURL = fmt.Sprintf("https://%s:%s", os.Getenv("SERVER_HOST"), os.Getenv("SERVER_PORT"))
-
-	readPasswords();
 }
 
 func readPasswords() {
 
 	file, err := os.Open("./token")
 	if err != nil {
-		log.Println("No se ha podido recuperar el token de autenticación del usuario")
+		// log.Println("No se ha podido recuperar el token de autenticación del usuario")
 		return
 	}
 
@@ -483,6 +489,8 @@ func menuScreen() {
 				break
 			case "2":
 				login()
+				break
+			default: clearScreen()
 		}
 	}
 }
@@ -501,11 +509,16 @@ func privateMenuScreen() {
 			case "4": download(/*isVersion*/ false) 
 				break
 			case "5": download(/*isVersion*/ true)
+				break
+			default: clearScreen()
 		}
 	}
 }
 
 func main() {
+
+	clearScreen()
+	color.Cyan("Bienvenid@ a HyperCloud-Sync®\n\n")
 
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
 
@@ -514,6 +527,7 @@ func main() {
 	}
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
 
+	readPasswords();
 
 	if userJwtToken != "" {
 		privateMenuScreen()
