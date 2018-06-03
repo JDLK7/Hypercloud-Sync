@@ -402,10 +402,8 @@ func uploadFile() {
 
 func selectFile() ([]byte, string){
 
-	fmt.Println("Abriendo dialogo")
 	filename, err := dialog.File().Title("Select file").Load()
-	fmt.Println("Dialogo abierto")
-
+	clearScreen()
 
 	if err != nil {
 		log.Fatal(err)

@@ -54,12 +54,12 @@ func connectToDatabase() {
 		os.Getenv("DB_DATABASE")
 
 	// Conectamos a la Base de Datos y guardamos la conexion en una variable global
-	var error error
-	db, error = sql.Open("mysql", connectionString)
+	var err error
+	db, err = sql.Open("mysql", connectionString)
 
-	if error != nil {
+	if err != nil {
 		log.Panicln("Error al conectar con el servidor de base de datos")
-		log.Panicln(error)
+		log.Panicln(err.Error())
 	} else {
 		log.Println("Conexión con el servidor de base de datos satisfactoria")
 	}
@@ -76,10 +76,10 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 	)
 
 	//Guardamos en rows todos los resultados obtenidos
-	rows, e := db.Query("select id,email,name from users")
-
+	rows, e := db.Query("SELECT id, email, name FROM users")
 	if e != nil {
-		log.Fatal(e)
+		log.Panicln("Error al obtener los usuarios de la BD:")
+		log.Fatal(e.Error())
 	}
 
 	defer rows.Close()
@@ -88,25 +88,21 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 
 		//Al pasar los parametros con & se alamacenará el valor de cada columna en ellos
-
-		/*
-		   IMPORTANTE A Scan hay que pasarle el mismo numero de parametros que pedimos en la consulta
-		   en este caso los 3 campos sino se va a la mierda
-		*/
 		er := rows.Scan(&id, &email, &name)
 		if er != nil {
-			log.Fatal(er)
+			log.Panicln("Error al instanciar los datos de los usuarios")
+			log.Fatal(er.Error())
 		}
-		//log.Println(id, email, name)
 	}
+
 	e = rows.Err()
 	if e != nil {
 		log.Fatal(e)
 	}
+
 	w.WriteHeader(http.StatusOK)
 	res := make([]byte, 30)
 	copy(res[:], strconv.Itoa(id)+" "+email+" "+name)
-	fmt.Println(strconv.Itoa(id) + " " + email + " " + name)
 
 	w.Write(res)
 
@@ -116,8 +112,8 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 func checkIfUserExists(email string) bool {
 	stmtOut, err := db.Prepare("SELECT EXISTS (SELECT * FROM users WHERE email = ?)")
 	if err != nil {
-		log.Panicln("Error al conectar con la BD:")
-		log.Panic(err.Error())
+		log.Panicln("Error de sintaxis al comprobar si un usuario está registrado en la BD:")
+		log.Fatal(err.Error())
 	}
 	defer stmtOut.Close()
 
@@ -126,7 +122,7 @@ func checkIfUserExists(email string) bool {
 	queryError := stmtOut.QueryRow(email).Scan(&exists)
 	if queryError != nil && queryError != sql.ErrNoRows {
 		log.Panicln("Error al comprobar si un usuario existe:")
-		log.Panic(queryError)
+		log.Panic(queryError.Error())
 	}
 
 	return exists
@@ -135,7 +131,8 @@ func checkIfUserExists(email string) bool {
 func getUserId(email string) int {
 	stmtOut, err := db.Prepare("SELECT id FROM users WHERE email = ?")
 	if err != nil {
-		panic(err.Error())
+		log.Panicln("Error de sintaxis al comprobar si un usuario está registrado en la BD:")
+		log.Fatal(err.Error())
 	}
 	defer stmtOut.Close()
 
@@ -143,7 +140,8 @@ func getUserId(email string) int {
 
 	queryError := stmtOut.QueryRow(email).Scan(&id)
 	if queryError != nil && queryError != sql.ErrNoRows {
-		panic(queryError)
+		log.Panicln("Error al comprobar si un usuario existe:")
+		log.Panic(queryError.Error())
 	}
 
 	return id
@@ -157,13 +155,13 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.Unmarshal(buf[:n], &userData); err != nil {
 		log.Panicln("Error al parsear datos en JSON de login:")
-		log.Panic(err)
+		log.Panic(err.Error())
 	}
 
 	stmtIns, err := db.Prepare("SELECT email, password FROM users WHERE email = ? ")
 	if err != nil {
-		log.Panicln("Error al comprobar datos de login en la BD:")
-		log.Panic(err)
+		log.Panicln("Error de sintaxis al comprobar datos de login en la BD:")
+		log.Fatal(err.Error())
 	}
 	defer stmtIns.Close()
 
@@ -196,13 +194,13 @@ func verifyCode(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.Unmarshal(buf[:n], &verifyData); err != nil {
 		log.Panicln("Error al parsear datos en JSON de código de verificación:")
-		log.Panic(err)
+		log.Panic(err.Error())
 	}
 
 	stmtIns, err := db.Prepare("SELECT loginCod, timeValid FROM users WHERE email = ?")
 	if err != nil {
 		log.Panicln("Error al comprobar el código de verificación en la BD:")
-		log.Panic(err)
+		log.Panic(err.Error())
 	}
 	defer stmtIns.Close()
 
@@ -257,14 +255,15 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.Unmarshal(buf[:n], &userData); err != nil {
 		log.Panicln("Error al parsear datos en JSON de registro:")
-		log.Panic(err)
+		log.Panic(err.Error())
 	}
 
 	if !checkIfUserExists(userData["email"].(string)) {
 
 		stmtIns, err := db.Prepare("INSERT INTO users (email, password, name) VALUES (?, ?, ?)")
 		if err != nil {
-			panic(err.Error())
+			log.Panicln("Error registrar un usuario en la BD:")
+			log.Fatal(err.Error())
 		}
 		defer stmtIns.Close()
 
@@ -273,7 +272,7 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 		_, queryError := stmtIns.Exec(userData["email"].(string), cipherPass, userData["name"].(string))
 		if queryError != nil {
 			log.Panicf("Error al registrar el usuario '%s' en la BD:\n", userData["email"])
-			log.Panic(err)
+			log.Panic(queryError.Error())
 		}
 
 		w.Write([]byte("Correctly registered user"))
@@ -295,8 +294,8 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 		AND f2.id IS NULL;
 	`)
 	if err != nil {
-		log.Panicln("Error al recuperar el listado de ficheros del usuario:")
-		log.Panic(err)
+		log.Panicln("Error de sintaxis al recuperar el listado de ficheros del usuario:")
+		log.Fatal(err.Error())
 	}
 	defer stmtIns.Close()
 
@@ -310,7 +309,8 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 	rows, queryError := stmtIns.Query(id)
 
 	if queryError != nil {
-		panic(queryError)
+		log.Panicln("Error al recuperar el listado de ficheros del usuario:")
+		log.Panic(queryError.Error())
 	}
 
 	var files = make([]types.File, 0)
@@ -358,16 +358,16 @@ func getVersions(w http.ResponseWriter, r *http.Request) {
 		ORDER BY updated_at DESC
 	`)
 	if err != nil {
-		log.Panicln("Error al recuperar el listado de versiones del fichero:")
-		log.Panic(err)
+		log.Panicln("Error de sintaxis al recuperar el listado de versiones de un fichero del usuario:")
+		log.Fatal(err.Error())
 	}
 
 	defer stmtIns.Close()
 
 	rows, queryError := stmtIns.Query(fileID, userID)
-
 	if queryError != nil {
-		panic(queryError)
+		log.Panicln("Error al recuperar el listado de versiones de un fichero del usuario:")
+		log.Panic(queryError.Error())
 	}
 
 	var files = make([]types.File, 0)
@@ -446,8 +446,8 @@ func createVersion(id string, path string, size int64, userID int) {
 		ORDER BY updated_at ASC
 	`)
 	if err != nil {
-		log.Panicln("Error al recuperar el fichero original")
-		log.Panic(err)
+		log.Panicln("Error de sintaxis al crear una versión de un fichero existente:")
+		log.Fatal(err.Error())
 	}
 	defer stmtIns.Close()
 
@@ -464,13 +464,14 @@ func createVersion(id string, path string, size int64, userID int) {
 		
 		stmtIns, err = db.Prepare("INSERT INTO versions (file_id, version_id) VALUES (?, ?)")
 		if err != nil {
-			log.Panicln("Error crear una nueva versión:")
-			log.Panic(err)
+			log.Panicln("Error de sintaxis al obtener el fichero original de una versión nueva:")
+			log.Fatal(err.Error())
 		}
 
 		_, queryError := stmtIns.Exec(originalID, id)
 		if queryError != nil {
-			panic(queryError)
+			log.Panicln("Error al obtener el archivo original de una versión nueva:")
+			log.Panic(queryError.Error())
 		}
 	}
 }
@@ -481,7 +482,6 @@ func upload(w http.ResponseWriter, r *http.Request) {
 
 	filename := r.Header.Get("X-Filename")
 	header := r.Header.Get("Authorization")
-	fmt.Println("Fichero subido: " + filepath.Base(filename))
 	id, _ := uuid.NewUUID()
 	file, err := os.Create("files/" + id.String())
 	if err != nil {
@@ -496,13 +496,15 @@ func upload(w http.ResponseWriter, r *http.Request) {
 
 	stmtIns, err := db.Prepare("INSERT INTO files (id, path, size, user_id) VALUES (?, ?, ?, ?)")
 	if err != nil {
-		panic(err.Error())
+		log.Panicln("Error de sintaxis al subir un fichero nuevo:")
+		log.Fatal(err.Error())
 	}
 	defer stmtIns.Close()
 
 	_, queryError := stmtIns.Exec(id, filepath.Base(filename), n, getUserByToken(header))
 	if queryError != nil {
-		panic(queryError)
+		log.Panicln("Error al registrar el fichero subido en la BD:")
+		log.Panic(queryError.Error())
 	}
 
 	createVersion(id.String(), filepath.Base(filename), n, getUserByToken(header))
@@ -537,8 +539,8 @@ func downloadFile(w http.ResponseWriter, r *http.Request) {
 
 	stmtOut, err := db.Prepare("SELECT path FROM files WHERE id = ?")
 	if err != nil {
-		log.Panicln("Error al conectar con la BD:")
-		log.Panic(err.Error())
+		log.Panicln("Error de sintaxis al descargar un fichero existente:")
+		log.Fatal(err.Error())
 	}
 	defer stmtOut.Close()
 
@@ -546,11 +548,11 @@ func downloadFile(w http.ResponseWriter, r *http.Request) {
 
 	queryError := stmtOut.QueryRow(downloadData.Id).Scan(&name)
 	if queryError != nil && queryError != sql.ErrNoRows {
-		log.Panic(queryError)
+		log.Panicln("Error al descargar un fichero registrado en la BD:")
+		log.Panic(queryError.Error())
 	}
 
 	w.Header().Set("X-Filename", name)
-	fmt.Println(fi.Size())
 	sizeStr := strconv.FormatInt(fi.Size(), 10)
 	w.Header().Set("X-Size", sizeStr)
 	w.Write(data)
@@ -565,7 +567,6 @@ func getUserByToken(header string) int {
 		token, _ := jwt.Parse(tokens[1], func(token *jwt.Token) (interface{}, error) {
 			return []byte(os.Getenv("APP_KEY")), nil
 		})
-		fmt.Println(token)
 		if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)) {
 			return getUserId(token.Claims.(jwt.MapClaims)["user"].(string))
 
@@ -687,14 +688,15 @@ func generateCode(email string) int {
 
 	stmtIns, err := db.Prepare("UPDATE users SET loginCod = ?, timeValid = ? WHERE email = ?")
 	if err != nil {
-		panic(err.Error())
+		log.Panicln("Error de sintaxis al registrar código de verificación de un usuario:")
+		log.Fatal(err.Error())
 	}
 	defer stmtIns.Close()
 
 	_, queryError := stmtIns.Exec(code, time.Now().Add(time.Hour).Unix(), email)
 	if queryError != nil {
-		log.Panicln("Error al intentar introducir el código de verificación en la BD:")
-		log.Panic(err)
+		log.Panicln("Error al registrar el código de verificación de un usuario:")
+		log.Panic(queryError.Error())
 	}
 
 	return code
@@ -713,7 +715,6 @@ func checkAuth(h http.Handler) http.Handler {
 			})
 
 			if token.Valid && checkIfUserExists(token.Claims.(jwt.MapClaims)["user"].(string)) {
-				log.Printf("Token del usuario '%s' válido\n", token.Claims.(jwt.MapClaims)["user"])
 				h.ServeHTTP(w, r)
 
 			} else {
