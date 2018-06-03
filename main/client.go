@@ -125,10 +125,15 @@ func login() {
 
 	p := make([]byte, 255)
 	n, err := body.Read(p)
-	fmt.Println(string(p[:n]))
 
-	requestAccessCode(email, hashedPass)
+	clearScreen()
 
+	if res.StatusCode == 401 {
+		color.Red("Respuesta del servidor: %s\n\n", string(p[:n]))
+	} else {
+		color.Green("Respuesta del servidor: %s\n\n", string(p[:n]))
+		requestAccessCode(email, hashedPass)
+	}
 }
 
 func clearSession() {
@@ -183,7 +188,12 @@ func requestAccessCode(email string, hashedPass string){
 		}
 		
 		clearScreen()
+		color.Green(verifyDataResponse["message"].(string) + "\n\n")
+
 		privateMenuScreen()
+	} else {
+		clearScreen()
+		color.Red(verifyDataResponse["message"].(string) + "\n\n")
 	}
 }
 

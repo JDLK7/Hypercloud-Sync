@@ -179,9 +179,10 @@ func loginUser(w http.ResponseWriter, r *http.Request) {
 	if bcrypt.CompareHashAndPassword(hashedPass, passIn) == nil {
 		codigo := generateCode(email)
 		sendMail(email, "Codigo: H-"+string(codigo), "\nIntroduce el siguiente codigo en la aplicación para continuar: H-"+strconv.Itoa(codigo)+"\nEste codigo solo tiene validez durante 1 hora")
-		w.Write([]byte("Se te ha enviado un email con el código de acceso, por favor comprueba tu bandeja de entrada"))
+		w.Write([]byte("Se te ha un código de acceso a tu email, por favor comprueba tu bandeja de entrada"))
 	} else {
-		w.Write([]byte("Wrong user or password"))
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("Usuario o contraseña incorrecta"))
 	}
 
 }
@@ -219,14 +220,14 @@ func verifyCode(w http.ResponseWriter, r *http.Request) {
 
 		verifyDataResponse = verifyResponse{
 			Ok:      true,
-			Message: "Access granted",
+			Message: "Código de verificación correcto",
 			Jwt:     generateToken(verifyData["email"].(string)),
 		}
 
 	} else {
 		verifyDataResponse = verifyResponse{
 			Ok:      false,
-			Message: "Wrong access code",
+			Message: "Código de verificación erróneo",
 		}
 	}
 
@@ -275,9 +276,9 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 			log.Panic(queryError.Error())
 		}
 
-		w.Write([]byte("Correctly registered user"))
+		w.Write([]byte("Usuario registrado correctamente"))
 	} else {
-		w.Write([]byte("User already exists"))
+		w.Write([]byte("El usuario ya existe"))
 	}
 }
 
