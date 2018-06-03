@@ -172,8 +172,6 @@ func download(isVersion bool) {
 		files = listFiles()
 	}
 
-	fmt.Printf("\nNumero de ficheros disponiblas: %d\n", len(files))
-
 	var id = -1
 
 	if isVersion {
@@ -216,30 +214,25 @@ func download(isVersion bool) {
 		defer res.Body.Close()
 
 		size, _ := strconv.ParseInt(res.Header.Get("X-Size"), 10, 64)
-		fmt.Println(size)
 		p := make([]byte, size)
 		n, _ := res.Body.Read(p)
 
 		saveFile(p[:n], res.Header.Get("X-Filename"))
 	}
-
-
 }
 
-func saveFile(fileEncryptBytes []byte, fileNameIn string)  {
+func saveFile(fileEncryptBytes []byte, fileNameIn string) {
 
 	filename, err := dialog.File().Save()
-
-
 	if err != nil {
-		panic(err)
+		fmt.Println("\nSe ha cancelado la descarga del fichero\n")
+		return
 	}
 
 	fmt.Println(len(fileEncryptBytes))
 	fileDecrypt, err := utils.Decrypt(string(fileEncryptBytes), []byte(userHash[len(userHash)/2:]))
 
 	ioutil.WriteFile(filename, []byte(fileDecrypt), 0777)
-
 }
 
 func listFiles() []types.File {
@@ -418,6 +411,8 @@ func init() {
 	gotenv.Load()
 
 	baseURL = fmt.Sprintf("https://%s:%s", os.Getenv("SERVER_HOST"), os.Getenv("SERVER_PORT"))
+
+	readPasswords();
 }
 
 func readPasswords() {
@@ -483,8 +478,6 @@ func privateMenuScreen() {
 }
 
 func main() {
-
-	readPasswords();
 
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
 
