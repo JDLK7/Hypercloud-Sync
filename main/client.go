@@ -11,6 +11,7 @@ import (
 	//"github.com/skratchdot/open-golang/open"
 	//"github.com/sqweek/dialog"
 	"github.com/sqweek/dialog"
+	"github.com/fatih/color"
 	"os"
 	"github.com/subosito/gotenv"
 	"io/ioutil"
@@ -43,6 +44,10 @@ var conn *tls.Conn
 var baseURL string
 var userHash []byte;
 var userJwtToken string;
+
+func clearScreen() {
+	print("\033[H\033[2J")
+}
 
 // Pregunta al usuario los datos de registro y
 // devuelve un 'registerRequest' con ellos
@@ -172,6 +177,10 @@ func download(isVersion bool) {
 		files = listFiles()
 	}
 
+	if files == nil {
+		return
+	}
+
 	var id = -1
 
 	if isVersion {
@@ -182,11 +191,15 @@ func download(isVersion bool) {
 
 	fmt.Scanf("%d", &id)
 
-	if id < 0 || id > len(files) {
+	if id < 0 || id >= len(files) {
+		clearScreen()
+		color.Set(color.FgRed)
+		defer color.Unset()
+
 		if isVersion {
-			fmt.Println("La versión seleccionada no existe")			
+			fmt.Println("\nLa versión seleccionada no existe\n")
 		} else {
-			fmt.Println("El fichero seleccionado no existe")
+			fmt.Println("\nEl fichero seleccionado no existe\n")
 		}
 	} else {
 
@@ -223,19 +236,20 @@ func download(isVersion bool) {
 
 func saveFile(fileEncryptBytes []byte, fileNameIn string) {
 
+	clearScreen()
+
 	filename, err := dialog.File().Save()
 	if err != nil {
-		fmt.Println("\nSe ha cancelado la descarga del fichero\n")
-		return
+		color.Yellow("\nSe ha cancelado la descarga del fichero\n\n")
+	} else {
+		fileDecrypt, _ := utils.Decrypt(string(fileEncryptBytes), []byte(userHash[len(userHash)/2:]))
+		ioutil.WriteFile(filename, []byte(fileDecrypt), 0777)
 	}
-
-	fmt.Println(len(fileEncryptBytes))
-	fileDecrypt, err := utils.Decrypt(string(fileEncryptBytes), []byte(userHash[len(userHash)/2:]))
-
-	ioutil.WriteFile(filename, []byte(fileDecrypt), 0777)
 }
 
 func listFiles() []types.File {
+
+	clearScreen()
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/private/files", baseURL), bytes.NewBuffer([]byte("")))
 
@@ -257,7 +271,11 @@ func listFiles() []types.File {
 	var files = make([]types.File, 0)
 	if filesResponse.Ok {
 		files = filesResponse.Files
+
 		fmt.Println("\nListado de ficheros: \n")
+		color.Set(color.FgGreen)
+		defer color.Unset()
+
 		for index, file := range files {
 
 			fmt.Printf("%d. %s\n", index, string(file.Name))
@@ -281,10 +299,14 @@ func listFileVersions() []types.File {
 
 	var file types.File
 	
-	if id < 0 || id > len(files) {
-		fmt.Println("El fichero seleccionado no existe")
+	if id < 0 || id >= len(files) {
+		clearScreen()
+		color.Red("\nEl fichero seleccionado no existe\n\n")
+
 		return nil
 	}
+
+	clearScreen()
 	
 	file = files[id]
 
@@ -311,7 +333,11 @@ func listFileVersions() []types.File {
 	
 	if filesResponse.Ok {
 		versions = filesResponse.Files
+
 		fmt.Println("\nListado de versiones: \n")
+		color.Set(color.FgGreen)
+		defer color.Unset()
+
 		for index, version := range versions {
 
 			fmt.Printf("%d. %s - %s\n", index, string(version.Name), string(version.Date))
@@ -324,6 +350,8 @@ func listFileVersions() []types.File {
 }
 
 func privateMenu() string {
+
+	color.Cyan("\nMenú principal\n\n")
 
 	var opt string
 	fmt.Println("1. Subir fichero")
