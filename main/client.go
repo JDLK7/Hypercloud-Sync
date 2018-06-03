@@ -169,10 +169,6 @@ func requestAccessCode(email string, hashedPass string){
 
 			}
 		}
-
-
-
-
 	}
 }
 
@@ -301,7 +297,9 @@ func listFileVersions() []types.File {
 
 	defer res.Body.Close()
 
-	p := make([]byte, 512)
+	size, _ := strconv.ParseInt(res.Header.Get("X-ResponseSize"), 10, 64)
+
+	p := make([]byte, size)
 	n, _ := res.Body.Read(p)
 
 	var filesResponse types.FilesResponse

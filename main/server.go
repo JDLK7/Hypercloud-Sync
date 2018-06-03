@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"reflect"
 
 	_ "github.com/go-sql-driver/mysql"
 
@@ -391,6 +392,11 @@ func getVersions(w http.ResponseWriter, r *http.Request) {
 		Files: files,
 	}
 
+	responseSize := int64(reflect.TypeOf(fileListResponse).Size())
+	responseSize += int64(reflect.TypeOf(files[0]).Size() + 50) * int64(len(files))
+
+	w.Header().Set("X-ResponseSize", strconv.FormatInt(responseSize, 10))
+
 	data, _ := json.Marshal(fileListResponse)
 
 	w.Write([]byte(data))
@@ -433,6 +439,7 @@ func createVersion(id string, path string, size int64, userID int) {
 		FROM files 
 		WHERE path = ?
 		AND user_id = ?
+		GROUP BY path
 	`)
 	if err != nil {
 		log.Panicln("Error al recuperar el fichero original")
