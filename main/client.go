@@ -157,30 +157,38 @@ func requestAccessCode(email string, hashedPass string){
 			panic(n2)
 		}
 		
-		var opt = "0"
-		for opt != "3" {
-			opt = privateMenu()
-			switch opt {
-			case "1": uploadFile()
-				break
-			case "2": listFiles()
-				break
-			case "3": download()
-
-			}
-		}
+		privateMenu()
 	}
 }
 
-func download()  {
+func download(isVersion bool) {
 
-	var files = listFiles()
+	var files []types.File
+
+	if isVersion {
+		files = listFileVersions()
+	} else {
+		files = listFiles()
+	}
+
+	fmt.Printf("\nNumero de ficheros disponiblas: %d\n", len(files))
 
 	var id = -1
-	fmt.Print("Selecciona un fichero: ")
+
+	if isVersion {
+		fmt.Print("Selecciona una versión: ")
+	} else {
+		fmt.Print("Selecciona un fichero: ")
+	}
+
 	fmt.Scanf("%d", &id)
+
 	if id < 0 || id > len(files) {
-		fmt.Println("El fichero seleccionado no existe")
+		if isVersion {
+			fmt.Println("La versión seleccionada no existe")			
+		} else {
+			fmt.Println("El fichero seleccionado no existe")
+		}
 	} else {
 
 		var file = files[id]
@@ -318,7 +326,7 @@ func listFileVersions() []types.File {
 		fmt.Println()
 	}
 
-	return files
+	return versions
 }
 
 func privateMenu() string {
@@ -328,6 +336,7 @@ func privateMenu() string {
 	fmt.Println("2. Listar ficheros")
 	fmt.Println("3. Listar versiones de un fichero")
 	fmt.Println("4. Descargar fichero")
+	fmt.Println("5. Descargar versión de un fichero")
 	fmt.Println("q. Salir")
 	fmt.Print("Opción: ")
 	fmt.Scanf("%s\n", &opt)
@@ -461,9 +470,11 @@ func privateMenuScreen() {
 				break
 			case "2": listFiles()
 				break
-			case "3": listFileVersions() 
+			case "3": listFileVersions()
 				break
-			case "4": download()
+			case "4": download(/*isVersion*/ false) 
+				break
+			case "5": download(/*isVersion*/ true)
 		}
 	}
 }

@@ -287,10 +287,12 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 	header := r.Header.Get("Authorization")
 	id := getUserByToken(header)
 	stmtIns, err := db.Prepare(`
-		SELECT ANY_VALUE(id) as id, path, ANY_VALUE(size) as size, MAX(updated_at) as updated_at
-		FROM files 
-		WHERE user_id = ?
-		GROUP BY path
+		SELECT f1.id, f1.path, f1.size, f1.updated_at
+		FROM files as f1 
+		LEFT JOIN files as f2 
+		ON (f1.path = f2.path AND f1.updated_at < f2.updated_at) 
+		WHERE f1.user_id = ?
+		AND f2.id IS NULL;
 	`)
 	if err != nil {
 		log.Panicln("Error al recuperar el listado de ficheros del usuario:")
@@ -353,6 +355,7 @@ func getVersions(w http.ResponseWriter, r *http.Request) {
 			WHERE version_id = ?
 		)
 		AND f.user_id = ?
+		ORDER BY updated_at DESC
 	`)
 	if err != nil {
 		log.Panicln("Error al recuperar el listado de versiones del fichero:")
@@ -435,11 +438,12 @@ func encryptHashedPassword(hash []byte) string {
 
 func createVersion(id string, path string, size int64, userID int) {
 	stmtIns, err := db.Prepare(`
-		SELECT ANY_VALUE(id) as id, MIN(updated_at) as updated_at
+		SELECT id, updated_at
 		FROM files 
 		WHERE path = ?
 		AND user_id = ?
 		GROUP BY path
+		ORDER BY updated_at ASC
 	`)
 	if err != nil {
 		log.Panicln("Error al recuperar el fichero original")
