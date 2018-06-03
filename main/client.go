@@ -40,6 +40,7 @@ type verifyRequest struct {
 
 var conn *tls.Conn
 
+var baseURL string
 var userHash []byte;
 var userJwtToken string;
 
@@ -67,7 +68,7 @@ func register() {
 	request, _ := json.Marshal(userData)
 
 
-	res, err := http.Post("https://127.0.0.1:8443/register", "application/json", bytes.NewBuffer(request))
+	res, err := http.Post(fmt.Sprintf("%s/register", baseURL), "application/json", bytes.NewBuffer(request))
 
 	if err != nil {
 		log.Fatalf("client: write: %s", err)
@@ -98,7 +99,7 @@ func login() {
 
 	request, _ := json.Marshal(userData)
 
-	res, err := http.Post("https://127.0.0.1:8443/login", "application/json", bytes.NewBuffer(request))
+	res, err := http.Post(fmt.Sprintf("%s/login", baseURL), "application/json", bytes.NewBuffer(request))
 
 	if err != nil {
 		log.Fatalf("client: write: %s", err)
@@ -129,7 +130,7 @@ func requestAccessCode(email string, hashedPass string){
 	}
 	fmt.Println("Intentando peticion")
 	request, _ := json.Marshal(verifyData)
-	res, _ := http.Post("https://127.0.0.1:8443/verify", "application/json", bytes.NewBuffer(request))
+	res, _ := http.Post(fmt.Sprintf("%s/verify", baseURL), "application/json", bytes.NewBuffer(request))
 	fmt.Println("Peticion hecha")
 	body := res.Body
 	p := make([]byte, 255)
@@ -199,7 +200,7 @@ func download(isVersion bool) {
 
 		request, _ := json.Marshal(fileRequest)
 
-		req, err := http.NewRequest("POST", "https://127.0.0.1:8443/private/download", bytes.NewBuffer(request))
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s/private/download", baseURL), bytes.NewBuffer(request))
 
 		if err != nil {
 			panic(err)
@@ -243,7 +244,7 @@ func saveFile(fileEncryptBytes []byte, fileNameIn string)  {
 
 func listFiles() []types.File {
 
-	req, err := http.NewRequest("GET", "https://127.0.0.1:8443/private/files", bytes.NewBuffer([]byte("")))
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/private/files", baseURL), bytes.NewBuffer([]byte("")))
 
 	req.Header.Set("Authorization", "Bearer " + userJwtToken)
 
@@ -294,7 +295,7 @@ func listFileVersions() []types.File {
 	
 	file = files[id]
 
-	req, err := http.NewRequest("GET", "https://127.0.0.1:8443/private/versions?file=" + file.Id, bytes.NewBuffer([]byte("")))
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/private/versions?file=%s", baseURL, file.Id), bytes.NewBuffer([]byte("")))
 	req.Header.Set("Authorization", "Bearer " + userJwtToken)
 	
 	res, err := (&http.Client{}).Do(req)
@@ -348,7 +349,7 @@ func uploadFile() {
 
 	chiperFile, filename := selectFile()
 
-	req, err := http.NewRequest("POST", "https://127.0.0.1:8443/private/upload", bytes.NewBuffer(chiperFile))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/private/upload", baseURL), bytes.NewBuffer(chiperFile))
 
 	req.Header.Set("Content-Type", "binary/octet-stream")
 	req.Header.Set("Authorization", "Bearer " + userJwtToken)
@@ -415,6 +416,8 @@ func menu() string{
 func init() {
 	// Carga las variables de entorno
 	gotenv.Load()
+
+	baseURL = fmt.Sprintf("https://%s:%s", os.Getenv("SERVER_HOST"), os.Getenv("SERVER_PORT"))
 }
 
 func readPasswords() {
