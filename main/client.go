@@ -237,7 +237,7 @@ func saveFile(fileEncryptBytes []byte, fileNameIn string)  {
 
 }
 
-func listFiles() []types.File{
+func listFiles() []types.File {
 
 	req, err := http.NewRequest("GET", "https://127.0.0.1:8443/private/files", bytes.NewBuffer([]byte("")))
 
@@ -272,12 +272,64 @@ func listFiles() []types.File{
 
 }
 
+func listFileVersions() []types.File {
+
+	var files = listFiles()
+
+	var id = -1
+
+	fmt.Print("Selecciona un fichero: ")
+	fmt.Scanf("%d", &id)
+
+	var file types.File
+	
+	if id < 0 || id > len(files) {
+		fmt.Println("El fichero seleccionado no existe")
+		return nil
+	}
+	
+	file = files[id]
+
+	req, err := http.NewRequest("GET", "https://127.0.0.1:8443/private/versions?file=" + file.Id, bytes.NewBuffer([]byte("")))
+	req.Header.Set("Authorization", "Bearer " + userJwtToken)
+	
+	res, err := (&http.Client{}).Do(req)
+	if err != nil {
+		log.Panicln("Ha ocurrido un error al intentar listar las versiones de un fichero")
+		panic(err)
+	}
+
+	defer res.Body.Close()
+
+	p := make([]byte, 512)
+	n, _ := res.Body.Read(p)
+
+	var filesResponse types.FilesResponse
+
+	json.Unmarshal(p[:n], &filesResponse)
+	var versions = make([]types.File, 0)
+	
+	if filesResponse.Ok {
+		versions = filesResponse.Files
+		fmt.Println("\nListado de versiones: \n")
+		for index, version := range versions {
+
+			fmt.Printf("%d. %s - %s\n", index, string(version.Name), string(version.Date))
+		}
+
+		fmt.Println()
+	}
+
+	return files
+}
+
 func privateMenu() string {
 
 	var opt string
 	fmt.Println("1. Subir fichero")
 	fmt.Println("2. Listar ficheros")
-	fmt.Println("3. Descargar fichero")
+	fmt.Println("3. Listar versiones de un fichero")
+	fmt.Println("4. Descargar fichero")
 	fmt.Println("q. Salir")
 	fmt.Print("Opción: ")
 	fmt.Scanf("%s\n", &opt)
@@ -411,7 +463,9 @@ func privateMenuScreen() {
 				break
 			case "2": listFiles()
 				break
-			case "3": download()
+			case "3": listFileVersions() 
+				break
+			case "4": download()
 		}
 	}
 }

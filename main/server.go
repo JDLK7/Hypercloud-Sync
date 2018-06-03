@@ -336,6 +336,66 @@ func getFiles(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func getVersions(w http.ResponseWriter, r *http.Request) {
+
+	header := r.Header.Get("Authorization")
+	fileID := r.URL.Query().Get("file")
+	userID := getUserByToken(header)
+
+	stmtIns, err := db.Prepare(`
+		SELECT id, path, size, updated_at
+		FROM files as f
+		JOIN versions as v ON f.id = v.version_id
+		WHERE v.file_id = (
+			SELECT file_id
+			FROM versions
+			WHERE version_id = ?
+		)
+		AND f.user_id = ?
+	`)
+	if err != nil {
+		log.Panicln("Error al recuperar el listado de versiones del fichero:")
+		log.Panic(err)
+	}
+
+	defer stmtIns.Close()
+
+	rows, queryError := stmtIns.Query(fileID, userID)
+
+	if queryError != nil {
+		panic(queryError)
+	}
+
+	var files = make([]types.File, 0)
+
+	var idFile string
+	var path string
+	var size int64
+	var updatedAt string
+
+	for rows.Next() {
+		rows.Scan(&idFile, &path, &size, &updatedAt)
+
+		var file = types.File {
+			Id:   idFile,
+			Name: path,
+			Size: size,
+			Date: updatedAt,
+		}
+
+		files = append(files, file)
+	}
+
+	var fileListResponse = types.FilesResponse{
+		Ok:    true,
+		Files: files,
+	}
+
+	data, _ := json.Marshal(fileListResponse)
+
+	w.Write([]byte(data))
+}
+
 // Devuelve la clave cifrada con la "pimienta" en base64.
 func encryptHashedPassword(hash []byte) string {
 	// Se decodifica la clave de cifrado que está guardada como variable de entorno.
@@ -367,6 +427,43 @@ func encryptHashedPassword(hash []byte) string {
 	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
+func createVersion(id string, path string, size int64, userID int) {
+	stmtIns, err := db.Prepare(`
+		SELECT ANY_VALUE(id) as id, MIN(updated_at) as updated_at
+		FROM files 
+		WHERE path = ?
+		AND user_id = ?
+	`)
+	if err != nil {
+		log.Panicln("Error al recuperar el fichero original")
+		log.Panic(err)
+	}
+	defer stmtIns.Close()
+
+	rows, queryError := stmtIns.Query(path, userID)
+	if queryError != nil {
+		panic(queryError)
+	}
+
+	var originalID string
+	var updatedAt string
+
+	for rows.Next() {
+		rows.Scan(&originalID, &updatedAt)
+		
+		stmtIns, err = db.Prepare("INSERT INTO versions (file_id, version_id) VALUES (?, ?)")
+		if err != nil {
+			log.Panicln("Error crear una nueva versión:")
+			log.Panic(err)
+		}
+
+		_, queryError := stmtIns.Exec(originalID, id)
+		if queryError != nil {
+			panic(queryError)
+		}
+	}
+}
+
 func upload(w http.ResponseWriter, r *http.Request) {
 
 	os.Mkdir("files", 0755)
@@ -396,6 +493,8 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	if queryError != nil {
 		panic(queryError)
 	}
+
+	createVersion(id.String(), filepath.Base(filename), n, getUserByToken(header))
 
 	w.Write([]byte(fmt.Sprintf("%d bytes are recieved.\n", n)))
 
@@ -647,6 +746,7 @@ func main() {
 	subrouter.Use(checkAuth)
 	subrouter.HandleFunc("/upload", upload)
 	subrouter.HandleFunc("/files", getFiles)
+	subrouter.HandleFunc("/versions", getVersions)
 	subrouter.HandleFunc("/download", downloadFile)
 
 	//http.Handle("/", r)
