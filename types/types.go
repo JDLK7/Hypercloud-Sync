@@ -15,3 +15,7 @@ type FilesResponse struct {
 type FileDownloadRequest struct {
 	Id    string `json:"id"`
 }
+
+type FileDeleteRequest struct {
+	Id    string `json:"id"`
+}

@@ -395,6 +395,7 @@ func privateMenu() string {
 	fmt.Println("3. Listar versiones de un fichero")
 	fmt.Println("4. Descargar fichero")
 	fmt.Println("5. Descargar versión de un fichero")
+	fmt.Println("6. Eliminar fichero")
 	fmt.Println("----------------------------------")
 	fmt.Println("s. Cerrar sesión")
 	fmt.Println("q. Salir\n")
@@ -428,6 +429,74 @@ func uploadFile() {
 		menuScreen()
 	}
 
+}
+
+func delete(isVersion bool) {
+
+	var files []types.File
+
+	if isVersion {
+		files = listFileVersions()
+	} else {
+		files = listFiles()
+	}
+
+	if files == nil {
+		return
+	}
+
+	var id = -1
+
+	if isVersion {
+		fmt.Print("Selecciona una versión: ")
+	} else {
+		fmt.Print("Selecciona un fichero: ")
+	}
+
+	fmt.Scanf("%d", &id)
+
+	if id < 0 || id >= len(files) {
+		clearScreen()
+		color.Set(color.FgRed)
+		defer color.Unset()
+
+		if isVersion {
+			fmt.Println("\nLa versión seleccionada no existe\n")
+		} else {
+			fmt.Println("\nEl fichero seleccionado no existe\n")
+		}
+	} else {
+
+		var file = files[id]
+
+		var fileRequest = types.FileDeleteRequest{
+			Id: file.Id,
+		}
+
+		request, _ := json.Marshal(fileRequest)
+
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s/private/delete", baseURL), bytes.NewBuffer(request))
+		if err != nil {
+			panic(err)
+		}
+
+		req.Header.Set("Authorization", "Bearer " + userJwtToken)
+
+		res, err := (&http.Client{}).Do(req)
+		if err != nil {
+			clearScreen()
+			color.Red("\nError al realizar la eliminacion del fichero\n")
+			color.Red("Compruebe su conexión y vuelva a intentarlo\n\n")
+	
+			return
+		}
+		defer res.Body.Close()
+
+		message, _ := ioutil.ReadAll(res.Body)
+
+		clearScreen()
+		color.Green("Respuesta del servidor: %s\n\n", string(message))
+	}
 }
 
 func selectFile() ([]byte, string){
@@ -536,6 +605,8 @@ func privateMenuScreen() {
 			case "4": download(/*isVersion*/ false) 
 				break
 			case "5": download(/*isVersion*/ true)
+				break
+			case "6": delete(/*isVersion*/ false)
 				break
 			case "s":
 				clearSession() 

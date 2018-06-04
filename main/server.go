@@ -583,6 +583,100 @@ func getUserByToken(header string) int {
 
 }
 
+func deleteFile(w http.ResponseWriter, r *http.Request) {
+
+	var deleteData types.FileDeleteRequest
+	var originalFileID string
+	buf := make([]byte, 512)
+	n, _ := r.Body.Read(buf)
+
+	if err := json.Unmarshal(buf[:n], &deleteData); err != nil {
+		log.Panicln("Error al parsear datos en JSON de descarga:")
+		log.Panic(err)
+	}
+
+	stmtOut, err := db.Prepare(`SELECT file_id
+		FROM versions
+		WHERE version_id = ?`)
+
+	if err != nil {
+		log.Panicln("Error de sintaxis al obtener el id del fichero original:")
+		log.Fatal(err.Error())
+	}
+
+	queryError := stmtOut.QueryRow(deleteData.Id).Scan(&originalFileID)
+	if queryError != nil {
+		log.Panicln("Error al al obtener el id del fichero original de la BD:")
+		log.Panic(err.Error())
+	}
+
+	stmtOut, err = db.Prepare(`
+		SELECT version_id
+		FROM versions 
+		WHERE file_id = ?
+	`)
+	defer stmtOut.Close()
+	if err != nil {
+		log.Panicln("Error de sintaxis al seleccionar las versiones de un fichero:")
+		log.Fatal(err.Error())
+	}
+	rows, queryError := stmtOut.Query(originalFileID)
+	if queryError != nil {
+		log.Panicln("Error al seleccionar las versiones de un fichero de la BD:")
+		log.Panic(err.Error())
+	}
+
+	var idFile string
+
+	for rows.Next() {
+		rows.Scan(&idFile)
+
+		filename := "files/" + idFile
+
+		fileErr := os.Remove(filename)
+		if fileErr != nil {
+			fmt.Println("Otra cosa que falla")
+		}
+	}
+
+	// BORRADO DE LAS VERSIONES DEL FICHERO
+	stmtOut, err = db.Prepare(`
+		DELETE FROM versions WHERE file_id = ?`)
+	if err != nil {
+		log.Panicln("Error de sintaxis al eliminar las versiones de un fichero de la BD:")
+		log.Panic(err.Error())
+	}
+	_, queryError = stmtOut.Exec(originalFileID)
+	if queryError != nil {
+		log.Panicln("Error al eliminar las versiones de un fichero de la BD:")
+		log.Panic(queryError.Error())
+	}
+
+	// BORRADO DEL FICHERO
+	stmtOut, err = db.Prepare(`
+		DELETE FROM files
+		WHERE path IN (
+			SELECT f2.path
+			FROM (SELECT * FROM files) as f2
+			WHERE f2.id = ?
+		)
+	`)
+	if err != nil {
+		log.Panicln("Error de sintaxis al eliminar un fichero de la BD:")
+		log.Panic(err.Error())
+	}
+
+	_, queryError = stmtOut.Exec(originalFileID)
+	if queryError != nil {
+		log.Panicln("Error al eliminar un fichero de la BD:")
+		log.Panic(queryError.Error())
+	}
+
+	stmtOut.Close()
+
+	w.Write([]byte("Fichero eliminado correctamente"))
+}
+
 // Devuelve la clave descifrada como []byte
 func decryptHashedPassword(cipherPassword string) []byte {
 	// Se decodifica el texto cifrado.
@@ -761,6 +855,7 @@ func main() {
 	subrouter.HandleFunc("/files", getFiles)
 	subrouter.HandleFunc("/versions", getVersions)
 	subrouter.HandleFunc("/download", downloadFile)
+	subrouter.HandleFunc("/delete", deleteFile)
 
 	//http.Handle("/", r)
 	log.Println("Servidor HTTP a la escucha en el puerto 8443")
