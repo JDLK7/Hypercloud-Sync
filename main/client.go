@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"bytes"
 	"Hypercloud-Sync/utils"
-	//"github.com/skratchdot/open-golang/open"
-	//"github.com/sqweek/dialog"
 	"github.com/sqweek/dialog"
 	"github.com/fatih/color"
 	"os"
@@ -358,7 +356,7 @@ func listFileVersions() []types.File {
 
 	defer res.Body.Close()
 
-	size, _ := strconv.ParseInt(res.Header.Get("X-ResponseSize"), 10, 64)
+	size := res.ContentLength
 
 	p := make([]byte, size)
 	n, _ := res.Body.Read(p)

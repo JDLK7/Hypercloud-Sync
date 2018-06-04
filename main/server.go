@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"reflect"
 
 	_ "github.com/go-sql-driver/mysql"
 
@@ -395,11 +394,6 @@ func getVersions(w http.ResponseWriter, r *http.Request) {
 		Ok:    true,
 		Files: files,
 	}
-
-	responseSize := int64(reflect.TypeOf(fileListResponse).Size())
-	responseSize += int64(reflect.TypeOf(files[0]).Size() + 50) * int64(len(files))
-
-	w.Header().Set("X-ResponseSize", strconv.FormatInt(responseSize, 10))
 
 	data, _ := json.Marshal(fileListResponse)
 
