@@ -295,7 +295,9 @@ func listFiles() []types.File {
 	}
 	defer res.Body.Close()
 
-	p := make([]byte, 255)
+	size := res.ContentLength
+
+	p := make([]byte, size)
 	n, _ := res.Body.Read(p)
 
 	var filesResponse types.FilesResponse
